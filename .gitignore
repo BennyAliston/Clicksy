@@ -1,0 +1,34 @@
+# Built development files
+build/
+bin/
+gen/
+out/
+app/build/
+
+# Android Studio / IntelliJ files
+.idea/workspace.xml
+.idea/gradle.xml
+.idea/tasks.xml
+.idea/navigation.xml
+.idea/dictionaries/
+.idea/libraries/
+.idea/caches/
+.idea/appInsightsSettings.xml
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
+.idea/migrations.xml
+.idea/planningMode.xml
+.idea/runConfigurations.xml
+.idea/.gitignore
+*.iml
+.gradle/
+local.properties
+.navigation/
+
+# Log files and reports
+*.log
+outputs/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
