@@ -21,18 +21,15 @@
 
 ### 🖼️ Screenshots
 
-| Rounded Keys | Bubblegum Theme | Emojis |
-| :---: | :---: | :---: |
-| ![Rounded Keys](https://github.com/user-attachments/assets/64fe2893-31c8-4985-b27d-469a90c91634) | ![Bubblegum Theme](https://github.com/user-attachments/assets/e373cf7b-8417-487c-bde5-e7b1dc7dcc68) | ![Emojis](https://github.com/user-attachments/assets/d23e02f9-d2cf-4eca-9fec-3151f7e9bcef) |
+#### Themes
+| Sunshine Theme | Bubblegum Theme | Minty Theme | Dark Theme |
+| :---: | :---: | :---: | :---: |
+| ![Sunshine Theme](https://github.com/user-attachments/assets/00b27fb0-58b5-47c3-9c33-6ab27fdb3a06) | ![Bubblegum Theme](https://github.com/user-attachments/assets/e373cf7b-8417-487c-bde5-e7b1dc7dcc68) | ![Minty Theme](https://github.com/user-attachments/assets/0d8aea06-da69-490b-baaf-ca715609d587) | ![Dark Theme](https://github.com/user-attachments/assets/a0123095-2a87-40e9-87d4-9459f493952a) |
 
-| Clipboard | Minty Theme | Dark Theme |
+#### Features & Layouts
+| Rounded Keys | Emojis | Clipboard & Settings |
 | :---: | :---: | :---: |
-| ![Clipboard](https://github.com/user-attachments/assets/42cae0c5-67a8-41b7-b1d0-7f4c5259beea) | ![Minty Theme](https://github.com/user-attachments/assets/0d8aea06-da69-490b-baaf-ca715609d587) | ![Dark Theme](https://github.com/user-attachments/assets/a0123095-2a87-40e9-87d4-9459f493952a) |
-
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/00b27fb0-58b5-47c3-9c33-6ab27fdb3a06" width="280" alt="Clicksy App Screen" /><br/>
-  <em>App Settings & Clipboard Preview</em>
-</p>
+| ![Rounded Keys](https://github.com/user-attachments/assets/64fe2893-31c8-4985-b27d-469a90c91634) | ![Emojis](https://github.com/user-attachments/assets/d23e02f9-d2cf-4eca-9fec-3151f7e9bcef) | ![Clipboard](https://github.com/user-attachments/assets/42cae0c5-67a8-41b7-b1d0-7f4c5259beea) |
 
 ---
 
