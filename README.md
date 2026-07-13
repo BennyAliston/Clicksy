@@ -5,7 +5,34 @@
 [![Compose](https://img.shields.io/badge/Jetpack_Compose-latest-orange.svg?logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Clicksy** is a modern, high-performance, and feature-rich Android keyboard built entirely using **Jetpack Compose** and Kotlin. It embraces a bold **Neubrutalism** design system—featuring high-contrast colors, solid black borders, hard offset shadows, and dynamic micro-animations.
+**Clicksy** is a modern, high-performance, and feature-rich Android keyboard built entirely using **Jetpack Compose** and Kotlin. It embraces a bold **Neubrutalism** design system featuring high-contrast colors, solid black borders, hard offset shadows, and dynamic micro-animations.
+
+---
+
+## 📸 Previews
+
+### 🎥 Demo Video
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/cc1246aa-8b1b-4f26-b56d-59587e11e108" width="280" controls></video>
+  <br/>
+  <em>If the video player doesn't display above, you can open it directly: <strong><a href="https://github.com/user-attachments/assets/cc1246aa-8b1b-4f26-b56d-59587e11e108">Demo Video (MP4)</a></strong></em>
+</p>
+
+### 🖼️ Screenshots
+
+| Sunshine Theme | Bubblegum Theme | Minty Theme |
+| :---: | :---: | :---: |
+| ![Sunshine Theme](https://github.com/user-attachments/assets/64fe2893-31c8-4985-b27d-469a90c91634) | ![Bubblegum Theme](https://github.com/user-attachments/assets/e373cf7b-8417-487c-bde5-e7b1dc7dcc68) | ![Minty Theme](https://github.com/user-attachments/assets/d23e02f9-d2cf-4eca-9fec-3151f7e9bcef) |
+
+| Dark Theme | Rounded Keys | Emojis & Clipboard |
+| :---: | :---: | :---: |
+| ![Dark Theme](https://github.com/user-attachments/assets/42cae0c5-67a8-41b7-b1d0-7f4c5259beea) | ![Rounded Keys](https://github.com/user-attachments/assets/0d8aea06-da69-490b-baaf-ca715609d587) | ![Emojis](https://github.com/user-attachments/assets/a0123095-2a87-40e9-87d4-9459f493952a) |
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/00b27fb0-58b5-47c3-9c33-6ab27fdb3a06" width="280" alt="Clicksy App Screen" /><br/>
+  <em>App Settings & Clipboard Preview</em>
+</p>
 
 ---
 
