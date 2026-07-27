@@ -1,11 +1,14 @@
 # ⌨️ Clicksy Keyboard
 
+[![Version](https://img.shields.io/badge/Version-Beta_v0.1.0-purple.svg)](https://github.com/BennyAliston/Clicksy)
 [![Android API](https://img.shields.io/badge/API-26%2B-brightgreen.svg?style=flat)](https://android-arsenal.com/api?level=26)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.x-blue.svg?logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack_Compose-latest-orange.svg?logo=jetpackcompose)](https://developer.android.com/jetpack/compose)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Clicksy** is a modern, high-performance, and feature-rich Android keyboard built entirely using **Jetpack Compose** and Kotlin. It embraces a bold **Neubrutalism** design system featuring high-contrast colors, solid black borders, hard offset shadows, and dynamic micro-animations.
+
+> 💡 **A solo open-source project by BennyAliston**
 
 ---
 

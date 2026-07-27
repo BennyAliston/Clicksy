@@ -5,21 +5,9 @@ gen/
 out/
 app/build/
 
-# Android Studio / IntelliJ files
-.idea/workspace.xml
-.idea/gradle.xml
-.idea/tasks.xml
-.idea/navigation.xml
-.idea/dictionaries/
-.idea/libraries/
-.idea/caches/
-.idea/appInsightsSettings.xml
-.idea/deploymentTargetSelector.xml
-.idea/deviceManager.xml
-.idea/migrations.xml
-.idea/planningMode.xml
-.idea/runConfigurations.xml
-.idea/.gitignore
+# IDE & Editor files
+.idea/
+.vs/
 *.iml
 .gradle/
 local.properties

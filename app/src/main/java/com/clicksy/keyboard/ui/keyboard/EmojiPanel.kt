@@ -1,5 +1,7 @@
 package com.clicksy.keyboard.ui.keyboard
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -132,63 +134,59 @@ fun EmojiPanel(
                 modifier = Modifier
                     .weight(1f)
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 categories.forEachIndexed { index, category ->
                     val isSelected = index == currentCategoryIndex
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .size(36.dp)
-                            .then(
+                            .height(34.dp)
+                            .animateContentSize(animationSpec = tween(150))
+                            .drawBehind {
                                 if (isSelected) {
-                                    Modifier
-                                        .background(
-                                            colors.accentKeyBackground,
-                                            RoundedCornerShape(6.dp)
-                                        )
-                                        .border(
-                                            2.dp,
-                                            colors.border,
-                                            RoundedCornerShape(6.dp)
-                                        )
-                                } else {
-                                    Modifier
+                                    val shadowOffsetPx = 2.dp.toPx()
+                                    drawRoundRect(
+                                        color = colors.shadow,
+                                        topLeft = Offset(shadowOffsetPx, shadowOffsetPx),
+                                        size = Size(size.width, size.height),
+                                        cornerRadius = CornerRadius(8.dp.toPx())
+                                    )
                                 }
+                            }
+                            .background(
+                                color = if (isSelected) colors.accentKeyBackground else colors.keyBackground.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                width = if (isSelected) dims.borderWidth else 1.dp,
+                                color = if (isSelected) colors.border else colors.border.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
                                 coroutineScope.launch {
-                                    // Instantly scroll grid to the selected category header
                                     gridState.scrollToItem(categoryIndices[index])
                                 }
-                            },
-                        contentAlignment = Alignment.Center
+                            }
+                            .padding(horizontal = if (isSelected) 10.dp else 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = category.icon,
-                            fontSize = 18.sp
+                        CustomCategoryTabIcon(
+                            categoryName = category.name,
+                            isSelected = isSelected,
+                            size = 20.dp
                         )
+                        if (isSelected) {
+                            Text(
+                                text = category.name,
+                                style = ClicksyTypography.keyLabelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = colors.textOnAccent
+                            )
+                        }
                     }
                 }
             }
-
-            // ABC switcher key matching the suggestion bar inline buttons style
-            Box(
-                modifier = Modifier
-                    .width(48.dp)
-                    .height(28.dp)
-                    .background(colors.accentKeyBackground, RoundedCornerShape(4.dp))
-                    .border(dims.borderWidth, colors.border, RoundedCornerShape(4.dp))
-                    .clickable { onBackToKeyboard() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "ABC",
-                    style = ClicksyTypography.keyLabelSmall,
-                    color = colors.textOnAccent
-                )
-            }
-
         }
 
         // Single, vertically unified scrollable Emoji grid
@@ -264,6 +262,32 @@ fun EmojiPanel(
                 }
             }
         }
+
+        // Floating ABC key in the bottom-left corner
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = 16.dp, start = 16.dp)
+                    .size(56.dp, 48.dp)
+                    .drawBehind {
+                        drawRoundRect(
+                            color = colors.shadow,
+                            topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
+                            size = Size(size.width, size.height),
+                            cornerRadius = CornerRadius(12.dp.toPx())
+                        )
+                    }
+                    .background(colors.accentKeyBackground, RoundedCornerShape(12.dp))
+                    .border(dims.borderWidth, colors.border, RoundedCornerShape(12.dp))
+                    .clickable { onBackToKeyboard() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "ABC",
+                    style = ClicksyTypography.keyLabelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = colors.textOnAccent
+                )
+            }
 
         // Floating / bookmark backspace key in the bottom-right corner
             Box(

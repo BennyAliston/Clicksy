@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <!-- Face outer circle with yellow fill and bold black stroke -->
+  <path
+      android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"
+      android:strokeWidth="2"
+      android:fillColor="#FFDE4D"
+      android:strokeColor="#000000"/>
+  <!-- Left Eye -->
+  <path
+      android:pathData="M8.5,9.5m-1.5,0a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0"
+      android:fillColor="#000000"/>
+  <!-- Right Eye -->
+  <path
+      android:pathData="M15.5,9.5m-1.5,0a1.5,1.5 0 1,1 3,0a1.5,1.5 0 1,1 -3,0"
+      android:fillColor="#000000"/>
+  <!-- Neubrutalist Smile -->
+  <path
+      android:pathData="M7,13.5C8.2,16.2 10.1,17.5 12,17.5C13.9,17.5 15.8,16.2 17,13.5"
+      android:strokeWidth="2"
+      android:strokeColor="#000000"
+      android:strokeLineCap="round"/>
+</vector>

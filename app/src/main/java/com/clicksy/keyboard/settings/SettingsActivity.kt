@@ -515,6 +515,13 @@ private fun SettingsScreen(
                     style = ClicksyTypography.monoLabel,
                     color = colors.textSecondary
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.author_credit),
+                    style = ClicksyTypography.suggestionText.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                    color = colors.accentKeyBackground
+                )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "A neubrutalism-styled keyboard with bold borders,\nhard shadows, and vibrant colors.",
                     style = ClicksyTypography.clipboardText,

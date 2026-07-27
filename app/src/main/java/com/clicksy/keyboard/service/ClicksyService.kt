@@ -3,6 +3,7 @@ package com.clicksy.keyboard.service
 import android.content.Context
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -96,6 +97,8 @@ class ClicksyService : InputMethodService(),
     private var keyboardMode by mutableStateOf(KeyboardMode.QWERTY)
     private val recentEmojis = mutableStateListOf<String>()
     private var enterLabel by mutableStateOf("↵")
+    private var lastAutoCorrectedOriginal: String? = null
+    private var lastAutoCorrectedReplacement: String? = null
 
     private lateinit var shiftStateManager: ShiftStateManager
 
@@ -217,6 +220,8 @@ class ClicksyService : InputMethodService(),
                         keyboardSize = keyboardSize,
                         showNumberRow = showNumberRow,
                         onTextInput = { text ->
+                            lastAutoCorrectedOriginal = null
+                            lastAutoCorrectedReplacement = null
                             // If it's a suggestion selection, it ends with a space
                             if (text.endsWith(" ")) {
                                 val word = text.trim()
@@ -233,14 +238,36 @@ class ClicksyService : InputMethodService(),
                         onDeleteBackward = {
                             val ic = currentInputConnection
                             if (ic != null) {
-                                val beforeText = ic.getTextBeforeCursor(2, 0)
-                                if (beforeText != null && beforeText.length >= 2 &&
-                                    Character.isHighSurrogate(beforeText[beforeText.length - 2]) &&
-                                    Character.isLowSurrogate(beforeText[beforeText.length - 1])
-                                ) {
-                                    ic.deleteSurroundingText(2, 0)
+                                // Check if we should undo the previous auto-correction
+                                val orig = lastAutoCorrectedOriginal
+                                val repl = lastAutoCorrectedReplacement
+                                if (orig != null && repl != null) {
+                                    val textBefore = ic.getTextBeforeCursor(repl.length + 1, 0)?.toString() ?: ""
+                                    if (textBefore == "$repl ") {
+                                        ic.deleteSurroundingText(repl.length + 1, 0)
+                                        ic.commitText(orig, 1)
+                                        lastAutoCorrectedOriginal = null
+                                        lastAutoCorrectedReplacement = null
+                                        shiftStateManager.resetDoubleTapTimer()
+                                        return@KeyboardScreen
+                                    }
+                                }
+                                lastAutoCorrectedOriginal = null
+                                lastAutoCorrectedReplacement = null
+
+                                val selectedText = ic.getSelectedText(0)
+                                if (!selectedText.isNullOrEmpty()) {
+                                    ic.commitText("", 1)
                                 } else {
-                                    ic.deleteSurroundingText(1, 0)
+                                    val beforeText = ic.getTextBeforeCursor(2, 0)
+                                    if (beforeText != null && beforeText.length >= 2 &&
+                                        Character.isHighSurrogate(beforeText[beforeText.length - 2]) &&
+                                        Character.isLowSurrogate(beforeText[beforeText.length - 1])
+                                    ) {
+                                        ic.deleteSurroundingText(2, 0)
+                                    } else {
+                                        sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+                                    }
                                 }
                             }
                             shiftStateManager.resetDoubleTapTimer()
@@ -249,6 +276,8 @@ class ClicksyService : InputMethodService(),
                             }
                         },
                         onEnterAction = {
+                            lastAutoCorrectedOriginal = null
+                            lastAutoCorrectedReplacement = null
                             learnLastTypedWord()
                             handleEnterAction()
                             shiftStateManager.resetDoubleTapTimer()
@@ -257,8 +286,29 @@ class ClicksyService : InputMethodService(),
                             }
                         },
                         onSpace = {
-                            learnLastTypedWord()
-                            currentInputConnection?.commitText(" ", 1)
+                            val currentWord = getCurrentWordBeforeCursor()
+                            if (autocompleteEnabled && currentWord.isNotBlank()) {
+                                val correction = DictionaryProvider.getAutoCorrection(currentWord)
+                                if (correction != null && correction.lowercase() != currentWord.lowercase()) {
+                                    val ic = currentInputConnection
+                                    if (ic != null) {
+                                        ic.deleteSurroundingText(currentWord.length, 0)
+                                        ic.commitText("$correction ", 1)
+                                        lastAutoCorrectedOriginal = currentWord
+                                        lastAutoCorrectedReplacement = correction
+                                    }
+                                } else {
+                                    learnLastTypedWord()
+                                    currentInputConnection?.commitText(" ", 1)
+                                    lastAutoCorrectedOriginal = null
+                                    lastAutoCorrectedReplacement = null
+                                }
+                            } else {
+                                learnLastTypedWord()
+                                currentInputConnection?.commitText(" ", 1)
+                                lastAutoCorrectedOriginal = null
+                                lastAutoCorrectedReplacement = null
+                            }
                             shiftStateManager.resetDoubleTapTimer()
                             if (shiftState == ShiftState.OFF) {
                                 checkAutoCaps()
@@ -273,8 +323,28 @@ class ClicksyService : InputMethodService(),
                         onVoiceInput = {
                             startVoiceInput()
                         },
+                        onSuggestionSelected = { suggestion ->
+                            val ic = currentInputConnection
+                            if (ic != null) {
+                                val word = getCurrentWordBeforeCursor()
+                                if (word.isNotEmpty()) {
+                                    ic.deleteSurroundingText(word.length, 0)
+                                }
+                                ic.commitText("$suggestion ", 1)
+                                DictionaryProvider.learnWord(this@ClicksyService, suggestion)
+                            }
+                            lastAutoCorrectedOriginal = null
+                            lastAutoCorrectedReplacement = null
+                            shiftStateManager.handleCharacterInput(" ")
+                            if (shiftState == ShiftState.OFF) {
+                                checkAutoCaps()
+                            }
+                        },
                         getCurrentWord = {
                             getCurrentWordBeforeCursor()
+                        },
+                        getPreviousWord = {
+                            getPreviousWordBeforeCursor()
                         }
                     )
                 }
@@ -395,13 +465,6 @@ class ClicksyService : InputMethodService(),
         prefs.edit().putString(KEY_RECENT_EMOJIS, serialized).apply()
     }
 
-    private fun learnLastTypedWord() {
-        val word = getCurrentWordBeforeCursor()
-        if (word.isNotEmpty()) {
-            DictionaryProvider.learnWord(this, word)
-        }
-    }
-
     private fun loadPreferences() {
         val themeName = prefs.getString(KEY_THEME, NeuTheme.SUNSHINE.name)
         currentTheme = try {
@@ -454,16 +517,48 @@ class ClicksyService : InputMethodService(),
         }
     }
 
+    private fun getPreviousWordBeforeCursor(): String {
+        val textBefore = currentInputConnection
+            ?.getTextBeforeCursor(100, 0)
+            ?.toString() ?: return ""
+
+        val words = textBefore.trim().split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
+            .filter { it.isNotBlank() }
+
+        return if (words.size >= 2) words[words.size - 2] else if (words.size == 1 && textBefore.endsWith(" ")) words[0] else ""
+    }
+
     private fun getCurrentWordBeforeCursor(): String {
         val textBefore = currentInputConnection
             ?.getTextBeforeCursor(50, 0)
             ?.toString() ?: return ""
+
+        if (textBefore.endsWith(" ") || textBefore.endsWith("\n")) return ""
 
         // Find the last word (split by spaces and common delimiters)
         return textBefore.split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
             .lastOrNull()
             ?.takeIf { it.isNotBlank() }
             ?: ""
+    }
+
+    private fun learnLastTypedWord() {
+        val textBefore = currentInputConnection
+            ?.getTextBeforeCursor(100, 0)
+            ?.toString() ?: return
+
+        val words = textBefore.trim().split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
+            .filter { it.isNotBlank() }
+
+        if (words.isNotEmpty()) {
+            val lastWord = words.last()
+            DictionaryProvider.learnWord(this, lastWord)
+
+            if (words.size >= 2) {
+                val prevWord = words[words.size - 2]
+                DictionaryProvider.learnWordSequence(this, prevWord, lastWord)
+            }
+        }
     }
 
     private fun startVoiceInput() {

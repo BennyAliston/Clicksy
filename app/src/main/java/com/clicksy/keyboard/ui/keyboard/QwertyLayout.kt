@@ -148,8 +148,9 @@ fun QwertyLayout(
             )
 
             NeuKey(
-                label = "😊",
+                label = "",
                 modifier = Modifier.weight(1.0f),
+                icon = { CustomEmojiIcon(size = 22.dp) },
                 onTap = onSwitchToEmoji
             )
 

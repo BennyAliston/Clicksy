@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.clicksy.keyboard.ui.theme.ClicksyTheme
 import com.clicksy.keyboard.ui.theme.ClicksyTypography
 
@@ -135,8 +136,9 @@ fun SymbolLayout(
             )
 
             NeuKey(
-                label = "😊",
+                label = "",
                 modifier = Modifier.weight(1.0f),
+                icon = { CustomEmojiIcon(size = 22.dp) },
                 onTap = onSwitchToEmoji
             )
 

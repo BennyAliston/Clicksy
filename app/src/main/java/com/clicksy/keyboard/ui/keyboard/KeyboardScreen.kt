@@ -52,7 +52,9 @@ fun KeyboardScreen(
     onSpace: () -> Unit,
     onRequestHaptic: () -> Unit,
     onVoiceInput: () -> Unit,
+    onSuggestionSelected: (String) -> Unit = {},
     getCurrentWord: () -> String,
+    getPreviousWord: () -> String = { "" },
     onLaunchSettings: () -> Unit,
     modifier: Modifier = Modifier,
     autocompleteEnabled: Boolean = true,
@@ -84,6 +86,7 @@ fun KeyboardScreen(
 
     // Keyboard state
     var currentWord by remember { mutableStateOf("") }
+    var previousWord by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf(listOf<String>()) }
     val clipboardSuggestion by clipboardViewModel.clipboardSuggestion.collectAsState()
 
@@ -93,15 +96,18 @@ fun KeyboardScreen(
     // Update suggestions based on current word
     fun updateSuggestions() {
         currentWord = getCurrentWord()
+        previousWord = getPreviousWord()
     }
 
-    LaunchedEffect(currentWord, autocompleteEnabled) {
-        suggestions = if (autocompleteEnabled && currentWord.isNotBlank()) {
-            withContext(Dispatchers.Default) {
+    LaunchedEffect(currentWord, previousWord) {
+        suggestions = withContext(Dispatchers.Default) {
+            if (currentWord.isNotBlank()) {
                 DictionaryProvider.getSuggestions(currentWord, limit = 3)
+            } else if (previousWord.isNotBlank()) {
+                DictionaryProvider.getNextWordPredictions(previousWord, limit = 3)
+            } else {
+                emptyList()
             }
-        } else {
-            emptyList()
         }
     }
 
@@ -133,12 +139,7 @@ fun KeyboardScreen(
     }
 
     fun handleSuggestionTap(suggestion: String) {
-        // Replace current word with suggestion
-        val word = getCurrentWord()
-        // Delete the current partial word
-        repeat(word.length) { onDeleteBackward() }
-        // Insert the suggestion + space
-        onTextInput("$suggestion ")
+        onSuggestionSelected(suggestion)
         onRequestHaptic()
         currentWord = ""
         suggestions = emptyList()
