@@ -23,7 +23,7 @@
 ### 🖼️ Screenshots
 
 #### Themes
-| Sunshine Theme | Bubblegum Theme | Minty Theme | Dark Theme |
+| Sunshine Theme | Bubblegum Theme | Minty Theme | Adaptive Theme |
 | :---: | :---: | :---: | :---: |
 | ![Sunshine Theme](https://github.com/user-attachments/assets/7162d599-67e9-4e4e-80a7-c5aedb120a04) | ![Bubblegum Theme](https://github.com/user-attachments/assets/c9970f7f-5170-4637-b0fd-514fe806b651) | ![Minty Theme](https://github.com/user-attachments/assets/c3480016-7b2b-45be-8425-b6a5ed1b67c7) | ![Dark Theme](https://github.com/user-attachments/assets/6a00494a-ae74-409f-b7be-7b2ef9377d5a) |
 
@@ -73,7 +73,6 @@
 
 For a complete record of what changed in each version, including feature additions, performance milestones, and file-by-file breakdowns, check out:
 
-👉 **[Release Notes: 0.2.0-beta](RELEASE_NOTES.md)**
 
 ---
 
