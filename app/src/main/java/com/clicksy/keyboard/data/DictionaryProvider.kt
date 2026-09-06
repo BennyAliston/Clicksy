@@ -1,143 +1,127 @@
 package com.clicksy.keyboard.data
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
-import kotlin.math.min
+import kotlin.math.ln
+import kotlin.math.max
 
 /**
- * Advanced Adaptive Learning Engine for Clicksy Keyboard.
- * Features:
- * - Dynamic vocabulary frequency learning (custom names, slang, user words)
- * - N-Gram / Bigram Contextual Next-Word Prediction (learns typing patterns like "Good" -> "morning")
- * - Damerau-Levenshtein fuzzy matching & typo auto-correction
+ * Advanced Professional Suggestion & Auto-Correction Engine for Clicksy Keyboard.
+ *
+ * Capabilities:
+ * - High-speed Trie with sub-millisecond prefix autocomplete over 10,000+ English words
+ * - Spatial QWERTY distance modeling for accidental adjacent keypresses (e.g., 'o' vs 'p', 's' vs 'd')
+ * - Contraction & Slang expansions (e.g., "dont" -> "don't", "im" -> "I'm", "ill" -> "I'll")
+ * - N-Gram / Bigram Contextual Next-Word Prediction (e.g., "Good" -> "morning", "Thank" -> "you")
+ * - Real-time User Learning Engine with asynchronous background persistence
+ * - Contextual inline emoji suggestions
+ * - Smart auto-capitalization & casing preservation
  */
 object DictionaryProvider {
+
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private class TrieNode {
         val children = mutableMapOf<Char, TrieNode>()
         var isWord = false
-        var frequency = 0 // Higher = more common
+        var frequency = 0
+        var word: String? = null
     }
 
     private val root = TrieNode()
-    private var initialized = false
-    private val userWords = mutableMapOf<String, Int>()
-    private val allDictionaryWords = mutableSetOf<String>()
 
-    // Bigram Context Model: prevWord -> (nextWord -> frequency)
+    @Volatile
+    private var initialized = false
+
+    // Fast lookup sets & maps
+    private val allDictionaryWords = mutableSetOf<String>()
+    private val wordsByLength = Array(25) { mutableListOf<String>() }
+    private val userWords = mutableMapOf<String, Int>()
+    private var cachedTopUserWords: List<String>? = null
     private val bigramMap = mutableMapOf<String, MutableMap<String, Int>>()
 
-    // Direct common typo / slang / contraction corrections map
-    private val commonTypoMap = mapOf(
-        "teh" to "the",
-        "taht" to "that",
-        "thier" to "their",
-        "woudl" to "would",
-        "shoudl" to "should",
-        "coudl" to "could",
-        "recieve" to "receive",
-        "seperate" to "separate",
-        "untill" to "until",
-        "tomorow" to "tomorrow",
-        "tomoroww" to "tomorrow",
-        "yestarday" to "yesterday",
-        "awsome" to "awesome",
-        "thikn" to "think",
-        "thnk" to "think",
-        "plz" to "please",
-        "pls" to "please",
-        "thx" to "thanks",
-        "ty" to "thank you",
-        "bc" to "because",
-        "bcz" to "because",
-        "dont" to "don't",
-        "cant" to "can't",
-        "wont" to "won't",
-        "im" to "i'm",
-        "its" to "it's",
-        "youre" to "you're",
-        "hes" to "he's",
-        "shes" to "she's",
-        "theyre" to "they're",
-        "ive" to "i've",
-        "id" to "i'd",
-        "ill" to "i'll",
-        "didnt" to "didn't",
-        "isnt" to "isn't",
-        "havent" to "haven't",
-        "hasnt" to "hasn't",
-        "wasnt" to "wasn't",
-        "werent" to "weren't",
-        "couldnt" to "couldn't",
-        "shouldnt" to "shouldn't",
-        "wouldnt" to "wouldn't",
-        "doesnt" to "doesn't",
-        "theres" to "there's",
-        "thats" to "that's",
-        "whats" to "what's",
-        "whos" to "who's",
-        "lets" to "let's"
-    )
+    // Direct common typo / contraction corrections map
+    private val commonTypoMap: Map<String, String> by lazy {
+        EnglishDictionaryData.commonTypoMap
+    }
+
+    // Inline contextual emoji recommendations
+    private val emojiMap: Map<String, String> by lazy {
+        EnglishDictionaryData.inlineEmojiMap
+    }
 
     /**
-     * Initializes static common dictionary, pre-built bigrams & user-learned patterns.
+     * Initializes core dictionary corpus, pre-built bigrams & user learned vocabulary.
      */
-    fun initialize(context: Context) {
+    fun initialize(context: Context? = null) {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
 
-            // 1. Load static common words
-            commonWords.forEachIndexed { index, word ->
+            // 1. Load core 10k English corpus frequencies into Trie
+            EnglishDictionaryData.loadWordFrequencies { word, freq ->
                 val lower = word.lowercase()
-                val freq = maxOf(1, commonWords.size - index)
                 insert(lower, freq)
                 allDictionaryWords.add(lower)
+                if (lower.length < 25) {
+                    wordsByLength[lower.length].add(lower)
+                }
             }
 
-            // 2. Pre-seed popular English bigrams
-            seedDefaultBigrams()
+            // 2. Pre-seed default English conversational bigrams
+            EnglishDictionaryData.defaultBigrams.forEach { (prev, nextMap) ->
+                bigramMap[prev] = nextMap.toMutableMap()
+            }
 
             // 3. Load user-learned words from user_dict.txt
-            try {
-                val file = File(context.filesDir, "user_dict.txt")
-                if (file.exists()) {
-                    file.readLines().forEach { line ->
-                        val parts = line.split(":")
-                        if (parts.size == 2) {
-                            val word = parts[0].trim().lowercase()
-                            val freq = parts[1].toIntOrNull() ?: 10
-                            if (word.isNotEmpty()) {
-                                userWords[word] = freq
-                                insert(word, freq + 1000)
-                                allDictionaryWords.add(word)
+            if (context != null) {
+                try {
+                    val file = File(context.filesDir, "user_dict.txt")
+                    if (file.exists()) {
+                        file.readLines().forEach { line ->
+                            val parts = line.split(":")
+                            if (parts.size == 2) {
+                                val word = parts[0].trim().lowercase()
+                                val freq = parts[1].toIntOrNull() ?: 50
+                                if (word.isNotEmpty()) {
+                                    userWords[word] = freq
+                                    insert(word, freq + 15000)
+                                    allDictionaryWords.add(word)
+                                    if (word.length < 25) {
+                                        wordsByLength[word.length].add(word)
+                                    }
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
 
-            // 4. Load user-learned bigrams from user_bigrams.txt
-            try {
-                val file = File(context.filesDir, "user_bigrams.txt")
-                if (file.exists()) {
-                    file.readLines().forEach { line ->
-                        val parts = line.split("->")
-                        if (parts.size == 2) {
-                            val prev = parts[0].trim().lowercase()
-                            val nextParts = parts[1].split(":")
-                            if (nextParts.size == 2) {
-                                val next = nextParts[0].trim().lowercase()
-                                val freq = nextParts[1].toIntOrNull() ?: 5
-                                bigramMap.getOrPut(prev) { mutableMapOf() }[next] = freq
+                // 4. Load user-learned bigrams from user_bigrams.txt
+                try {
+                    val file = File(context.filesDir, "user_bigrams.txt")
+                    if (file.exists()) {
+                        file.readLines().forEach { line ->
+                            val parts = line.split("->")
+                            if (parts.size == 2) {
+                                val prev = parts[0].trim().lowercase()
+                                val nextParts = parts[1].split(":")
+                                if (nextParts.size == 2) {
+                                    val next = nextParts[0].trim().lowercase()
+                                    val freq = nextParts[1].toIntOrNull() ?: 10
+                                    bigramMap.getOrPut(prev) { mutableMapOf() }[next] = freq
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
 
             initialized = true
@@ -150,35 +134,45 @@ object DictionaryProvider {
             node = node.children.getOrPut(char) { TrieNode() }
         }
         node.isWord = true
-        node.frequency = maxOf(node.frequency, frequency)
+        node.frequency = max(node.frequency, frequency)
+        node.word = word
     }
 
     /**
-     * Learns a custom user word and boosts its frequency rank.
+     * Learns a user word dynamically and boosts its frequency rank.
      */
-    fun learnWord(context: Context, word: String) {
+    fun learnWord(context: Context? = null, word: String) {
         if (word.isBlank() || word.length < 2) return
         val normalized = word.trim().lowercase()
         if (!normalized.all { it.isLetter() || it == '\'' }) return
 
         initialize(context)
 
+        val wordsSnapshot: Map<String, Int>
         synchronized(this) {
             val currentFreq = userWords[normalized] ?: 0
-            val newFreq = currentFreq + 50
+            val newFreq = currentFreq + 100
             userWords[normalized] = newFreq
-            insert(normalized, newFreq + 1000)
-            allDictionaryWords.add(normalized)
+            cachedTopUserWords = null
+            insert(normalized, newFreq + 15000)
+            if (allDictionaryWords.add(normalized) && normalized.length < 25) {
+                wordsByLength[normalized.length].add(normalized)
+            }
+            wordsSnapshot = userWords.toMap()
+        }
 
-            try {
-                val file = File(context.filesDir, "user_dict.txt")
-                file.printWriter().use { writer ->
-                    userWords.forEach { (w, f) ->
-                        writer.println("$w:$f")
+        if (context != null) {
+            ioScope.launch {
+                try {
+                    val file = File(context.filesDir, "user_dict.txt")
+                    file.printWriter().use { writer ->
+                        wordsSnapshot.forEach { (w, f) ->
+                            writer.println("$w:$f")
+                        }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
     }
@@ -186,7 +180,7 @@ object DictionaryProvider {
     /**
      * Learns a sequence of 2 words (Bigram typing pattern) to predict next words dynamically.
      */
-    fun learnWordSequence(context: Context, prevWord: String, nextWord: String) {
+    fun learnWordSequence(context: Context? = null, prevWord: String, nextWord: String) {
         if (prevWord.isBlank() || nextWord.isBlank()) return
         val prev = prevWord.trim().lowercase()
         val next = nextWord.trim().lowercase()
@@ -195,57 +189,168 @@ object DictionaryProvider {
 
         initialize(context)
 
+        val bigramsSnapshot: Map<String, Map<String, Int>>
         synchronized(this) {
             val nextMap = bigramMap.getOrPut(prev) { mutableMapOf() }
             val currentFreq = nextMap[next] ?: 0
-            nextMap[next] = currentFreq + 10
+            nextMap[next] = currentFreq + 20
+            bigramsSnapshot = bigramMap.mapValues { it.value.toMap() }
+        }
 
-            // Save learned bigram patterns to disk
-            try {
-                val file = File(context.filesDir, "user_bigrams.txt")
-                file.printWriter().use { writer ->
-                    bigramMap.forEach { (p, map) ->
-                        map.forEach { (n, f) ->
-                            writer.println("$p->$n:$f")
+        if (context != null) {
+            ioScope.launch {
+                try {
+                    val file = File(context.filesDir, "user_bigrams.txt")
+                    file.printWriter().use { writer ->
+                        bigramsSnapshot.forEach { (p, map) ->
+                            map.forEach { (n, f) ->
+                                writer.println("$p->$n:$f")
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
     }
 
     /**
-     * Returns next-word predictions based on the previous word context (Bigram model).
+     * Preserves user casing style (e.g., "Th" -> "The", "TH" -> "THE", "th" -> "the", "im" -> "I'm").
      */
-    fun getNextWordPredictions(prevWord: String, limit: Int = 3): List<String> {
-        if (prevWord.isBlank()) return emptyList()
-        val lowerPrev = prevWord.trim().lowercase()
+    fun applyCasing(source: String, target: String): String {
+        if (source.isEmpty() || target.isEmpty()) return target
 
-        val nextMap = bigramMap[lowerPrev] ?: return emptyList()
-        return nextMap.entries
-            .sortedByDescending { it.value }
-            .take(limit)
-            .map { it.key }
+        // Special standalone pronoun "I"
+        if (target.equals("i", ignoreCase = true)) {
+            return "I"
+        }
+
+        // Special contractions starting with I: "I'm", "I've", "I'll", "I'd"
+        if (target.startsWith("i'", ignoreCase = true) || target.equals("i'm", ignoreCase = true) ||
+            target.equals("i've", ignoreCase = true) || target.equals("i'll", ignoreCase = true) ||
+            target.equals("i'd", ignoreCase = true)) {
+            return target.replaceFirstChar { it.uppercase() }
+        }
+
+        // All uppercase input: "HELLO" -> "WORLD"
+        if (source.length >= 2 && source.all { it.isUpperCase() || !it.isLetter() }) {
+            return target.uppercase()
+        }
+
+        // Title case: "Hel" -> "Hello"
+        if (source.first().isUpperCase()) {
+            return target.replaceFirstChar { it.uppercase() }
+        }
+
+        return target
     }
 
     /**
-     * Returns autocomplete suggestions for current prefix, combining Trie search,
-     * typo map, and Damerau-Levenshtein distance matching.
+     * Returns next-word predictions based on previous word context (Bigram model)
+     * supplemented by user's most frequently typed words, universal conversation starters,
+     * and contextual emojis.
      */
-    fun getSuggestions(prefix: String, limit: Int = 3): List<String> {
+    fun getNextWordPredictions(prevWord: String, limit: Int = 3): List<String> {
+        val lowerPrev = prevWord.trim().lowercase()
+        val results = mutableListOf<String>()
+
+        if (lowerPrev.isNotEmpty()) {
+            // 1. Contextual Bigram lookup
+            val nextMap = synchronized(this) {
+                bigramMap[lowerPrev]?.toMap()
+            }
+            if (nextMap != null) {
+                val sortedBigrams = nextMap.entries
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+                for (word in sortedBigrams) {
+                    if (word !in results) {
+                        results.add(word)
+                        if (results.size >= limit) break
+                    }
+                }
+            }
+
+            // Check if there is an emoji corresponding to the previous word (e.g., "love" -> ❤️)
+            val emojiMatch = emojiMap[lowerPrev]
+            if (emojiMatch != null && emojiMatch !in results && results.size < limit) {
+                results.add(emojiMatch)
+            }
+        }
+
+        // 2. User top frequent words
+        if (results.size < limit) {
+            val topUserWords = synchronized(this) {
+                cachedTopUserWords ?: userWords.entries
+                    .sortedByDescending { it.value }
+                    .map { it.key }
+                    .also { cachedTopUserWords = it }
+            }
+            for (word in topUserWords) {
+                if (word !in results && word != lowerPrev) {
+                    results.add(word)
+                    if (results.size >= limit) break
+                }
+            }
+        }
+
+        // 3. Conversational high-frequency fallbacks
+        if (results.size < limit) {
+            val fallbacks = listOf("I", "the", "to", "you", "and", "a", "is", "for", "in", "it", "that", "my", "we")
+            for (word in fallbacks) {
+                if (word !in results && !word.equals(lowerPrev, ignoreCase = true)) {
+                    results.add(word)
+                    if (results.size >= limit) break
+                }
+            }
+        }
+
+        return results.take(limit).map { applyCasing(prevWord, it) }
+    }
+
+    /**
+     * Returns ranked autocomplete & auto-correct suggestions for current prefix.
+     * Combines:
+     * 1. Direct typo/contraction map (e.g., "dont" -> "don't", "im" -> "I'm")
+     * 2. Context-aware bigram prefix matching
+     * 3. Prefix matches in the 10k Trie corpus with frequency scoring
+     * 4. Spatial QWERTY proximity & Damerau-Levenshtein fuzzy matching
+     * 5. Contextual inline emoji match
+     */
+    fun getSuggestions(prefix: String, prevWord: String = "", limit: Int = 3): List<String> {
         if (prefix.isBlank()) return emptyList()
 
         val lowerPrefix = prefix.lowercase().trim()
-        val results = mutableListOf<String>()
+        val lowerPrev = prevWord.lowercase().trim()
+        val scoredCandidates = mutableMapOf<String, Float>()
 
-        // 1. Direct typo map check
+        // 1. Direct typo / contraction check (Highest confidence)
         commonTypoMap[lowerPrefix]?.let { typoCorrection ->
-            results.add(typoCorrection)
+            scoredCandidates[typoCorrection.lowercase()] = 100000f
         }
 
-        // 2. Trie Prefix Search
+        // 2. Exact match in dictionary gets strong baseline score (only for actual words, not random single-letter prefixes)
+        if (allDictionaryWords.contains(lowerPrefix) && (lowerPrefix.length >= 2 || lowerPrefix == "a" || lowerPrefix == "i")) {
+            scoredCandidates[lowerPrefix] = scoredCandidates.getOrDefault(lowerPrefix, 0f) + 30000f
+        }
+
+        // 3. Context-Aware Bigram Match: If prevWord has bigrams starting with this prefix
+        if (lowerPrev.isNotEmpty()) {
+            val contextBigrams = synchronized(this) {
+                bigramMap[lowerPrev]?.toMap()
+            }
+            if (contextBigrams != null) {
+                contextBigrams.forEach { (candidate, freq) ->
+                    if (candidate.startsWith(lowerPrefix)) {
+                        val boost = freq * 250f + 50000f
+                        scoredCandidates[candidate] = scoredCandidates.getOrDefault(candidate, 0f) + boost
+                    }
+                }
+            }
+        }
+
+        // 4. Trie Prefix Search (Unigram Frequency Ranking)
         var node: TrieNode? = root
         for (char in lowerPrefix) {
             node = node?.children?.get(char)
@@ -254,56 +359,125 @@ object DictionaryProvider {
 
         if (node != null) {
             val prefixMatches = mutableListOf<Pair<String, Int>>()
-            collectWords(node, StringBuilder(lowerPrefix), prefixMatches)
-            val sortedPrefix = prefixMatches
-                .sortedByDescending { it.second }
-                .map { it.first }
+            collectWords(node, StringBuilder(lowerPrefix), prefixMatches, maxResults = 40)
+            prefixMatches.forEach { (matchedWord, freq) ->
+                // Exact prefix match bonus
+                val lenDiff = matchedWord.length - lowerPrefix.length
+                val lenPenalty = lenDiff * 15f
+                val score = freq.toFloat() - lenPenalty + 5000f
+                scoredCandidates[matchedWord] = scoredCandidates.getOrDefault(matchedWord, 0f) + score
+            }
+        }
 
-            sortedPrefix.forEach { match ->
-                if (!results.contains(match)) {
-                    results.add(match)
+        // 5. Spatial QWERTY Proximity & Fuzzy Typo Search (if not enough high-confidence candidates)
+        if (scoredCandidates.size < 10 && lowerPrefix.length >= 2) {
+            val prefixLen = lowerPrefix.length
+            val minLen = (prefixLen - 1).coerceAtLeast(1)
+            val maxLen = (prefixLen + 1).coerceAtMost(24)
+            val firstChar = lowerPrefix[0]
+
+            var testedCount = 0
+            for (len in minLen..maxLen) {
+                if (testedCount >= 120) break
+                val bucket = wordsByLength[len]
+                for (i in 0 until bucket.size) {
+                    val candidate = bucket[i]
+                    if (candidate.startsWith(firstChar) ||
+                        KeyboardProximity.getSubstitutionCost(candidate[0], firstChar) <= 0.6f ||
+                        candidate.length == prefixLen
+                    ) {
+                        val distance = KeyboardProximity.calculateWeightedDistance(lowerPrefix, candidate)
+                        if (distance <= 1.8f) {
+                            val baseFreq = 2000f
+                            val score = baseFreq - (distance * 2500f)
+                            val existing = scoredCandidates[candidate] ?: 0f
+                            if (score > existing) {
+                                scoredCandidates[candidate] = score
+                            }
+                        }
+                        testedCount++
+                        if (testedCount >= 120) break
+                    }
                 }
             }
         }
 
-        // 3. Damerau-Levenshtein Fuzzy Matching
-        if (results.size < limit && lowerPrefix.length >= 3) {
-            val fuzzyCandidates = allDictionaryWords
-                .filter { Math.abs(it.length - lowerPrefix.length) <= 2 }
-                .map { candidate -> candidate to damerauLevenshteinDistance(lowerPrefix, candidate) }
-                .filter { it.second in 1..2 }
-                .sortedBy { it.second }
-                .map { it.first }
+        // 6. Inline Emoji match (e.g., typing "fire" suggests "🔥" as an option)
+        val matchingEmoji = emojiMap[lowerPrefix]
 
-            fuzzyCandidates.forEach { match ->
-                if (!results.contains(match)) {
-                    results.add(match)
-                }
+        // Rank all candidates by score descending
+        val sortedList = scoredCandidates.entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+            .toMutableList()
+
+        // Construct 3-slot professional layout:
+        // Slot 1 (Center) = Top candidate (Primary / Autocorrect target)
+        // Slot 0 (Left) = Literal user typed text (if distinct) OR 2nd candidate
+        // Slot 2 (Right) = 3rd candidate OR matched Emoji
+        val results = mutableListOf<String>()
+
+        for (cand in sortedList) {
+            if (cand !in results) {
+                results.add(cand)
+                if (results.size >= limit + 1) break
             }
         }
 
-        return results.take(limit)
+        // Append emoji if available
+        if (matchingEmoji != null && matchingEmoji !in results) {
+            if (results.size >= limit) {
+                results[limit - 1] = matchingEmoji
+            } else {
+                results.add(matchingEmoji)
+            }
+        }
+
+        return results.take(limit).map { applyCasing(prefix, it) }
     }
 
     /**
-     * Returns auto-correction target for a completed word.
+     * Determines whether to auto-correct the typed word when SPACE is pressed.
+     * Returns the target correction string if high confidence, or null if no correction.
      */
-    fun getAutoCorrection(word: String): String? {
-        if (word.isBlank() || word.length < 2) return null
+    fun getAutoCorrection(word: String, prevWord: String = ""): String? {
+        if (word.isBlank() || word.length < 2) {
+            // Special single-letter auto-correction for "i" -> "I"
+            if (word == "i") return "I"
+            return null
+        }
+
         val lower = word.lowercase().trim()
 
-        if (allDictionaryWords.contains(lower)) return null
-        commonTypoMap[lower]?.let { return it }
+        // 1. Direct typo / contraction check (e.g., "dont" -> "don't", "im" -> "I'm")
+        commonTypoMap[lower]?.let {
+            return applyCasing(word, it)
+        }
 
-        if (lower.length >= 3) {
-            val bestFuzzy = allDictionaryWords
-                .filter { Math.abs(it.length - lower.length) <= 1 }
-                .map { candidate -> candidate to damerauLevenshteinDistance(lower, candidate) }
-                .filter { it.second == 1 }
-                .minByOrNull { it.second }
-                ?.first
+        // If the word is already a valid dictionary word, do not aggressively change it unless it's a known typo
+        if (allDictionaryWords.contains(lower)) {
+            return null
+        }
 
-            if (bestFuzzy != null) return bestFuzzy
+        // 2. Spatial QWERTY Proximity fuzzy correction for mistyped non-dictionary words
+        var bestCandidate: String? = null
+        var minDistance = Float.MAX_VALUE
+
+        val candidates = allDictionaryWords.filter { candidate ->
+            kotlin.math.abs(candidate.length - lower.length) <= 1
+        }.take(150)
+
+        for (candidate in candidates) {
+            val dist = KeyboardProximity.calculateWeightedDistance(lower, candidate)
+            // Distance <= 1.05 means either 1 adjacent touch typo, 1 transposition, or 1 missed letter
+            if (dist <= 1.05f && dist < minDistance) {
+                minDistance = dist
+                bestCandidate = candidate
+            }
+        }
+
+        if (bestCandidate != null) {
+            return applyCasing(word, bestCandidate)
         }
 
         return null
@@ -312,118 +486,18 @@ object DictionaryProvider {
     private fun collectWords(
         node: TrieNode,
         current: StringBuilder,
-        results: MutableList<Pair<String, Int>>
+        results: MutableList<Pair<String, Int>>,
+        maxResults: Int = 30
     ) {
-        if (node.isWord) {
-            results.add(current.toString() to node.frequency)
+        if (results.size >= maxResults) return
+        if (node.isWord && node.word != null) {
+            results.add(node.word!! to node.frequency)
         }
         for ((char, child) in node.children) {
+            if (results.size >= maxResults) return
             current.append(char)
-            collectWords(child, current, results)
+            collectWords(child, current, results, maxResults)
             current.deleteCharAt(current.length - 1)
         }
     }
-
-    private fun damerauLevenshteinDistance(s1: String, s2: String): Int {
-        val len1 = s1.length
-        val len2 = s2.length
-        val dp = Array(len1 + 1) { IntArray(len2 + 1) }
-
-        for (i in 0..len1) dp[i][0] = i
-        for (j in 0..len2) dp[0][j] = j
-
-        for (i in 1..len1) {
-            for (j in 1..len2) {
-                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                dp[i][j] = min(
-                    min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
-                    dp[i - 1][j - 1] + cost
-                )
-                if (i > 1 && j > 1 && s1[i - 1] == s2[j - 2] && s1[i - 2] == s2[j - 1]) {
-                    dp[i][j] = min(dp[i][j], dp[i - 2][j - 2] + cost)
-                }
-            }
-        }
-        return dp[len1][len2]
-    }
-
-    private fun seedDefaultBigrams() {
-        val defaultPairs = mapOf(
-            "good" to mapOf("morning" to 100, "night" to 80, "idea" to 60, "luck" to 50),
-            "thank" to mapOf("you" to 120, "so" to 80, "much" to 70),
-            "thanks" to mapOf("for" to 90, "a" to 60, "lot" to 50),
-            "how" to mapOf("are" to 110, "is" to 80, "was" to 60, "about" to 50),
-            "happy" to mapOf("birthday" to 110, "new" to 90, "anniversary" to 50),
-            "see" to mapOf("you" to 110, "later" to 80, "soon" to 70),
-            "let" to mapOf("me" to 100, "know" to 90, "us" to 50),
-            "i" to mapOf("am" to 110, "will" to 90, "have" to 80, "love" to 70, "think" to 60),
-            "you" to mapOf("are" to 110, "can" to 80, "have" to 70, "know" to 60),
-            "what" to mapOf("is" to 110, "are" to 80, "about" to 70, "do" to 60),
-            "have" to mapOf("a" to 110, "been" to 80, "to" to 70, "fun" to 60),
-            "call" to mapOf("me" to 100, "you" to 70, "back" to 60),
-            "meet" to mapOf("at" to 90, "you" to 80, "up" to 70)
-        )
-
-        defaultPairs.forEach { (prev, nextMap) ->
-            bigramMap[prev] = nextMap.toMutableMap()
-        }
-    }
-
-    private val commonWords = listOf(
-        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
-        "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
-        "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
-        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
-        "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
-        "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
-        "people", "into", "year", "your", "good", "some", "could", "them", "see", "other",
-        "than", "then", "now", "look", "only", "come", "its", "over", "think", "also",
-        "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
-        "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
-        "great", "between", "need", "large", "often", "hand", "high", "place", "keep", "help",
-        "every", "never", "start", "city", "right", "small", "night", "always", "next", "hard",
-        "open", "seem", "together", "each", "begin", "while", "own", "point", "house", "world",
-        "near", "build", "self", "home", "much", "both", "here", "move", "still", "end",
-        "school", "head", "turn", "real", "leave", "might", "door", "set", "close", "long",
-        "before", "last", "left", "few", "side", "been", "call", "part", "early", "water",
-        "find", "put", "thing", "many", "play", "away", "animal", "old", "follow", "learn",
-        "change", "more", "run", "off", "again", "read", "sure", "under", "going", "stop",
-        "let", "thought", "important", "until", "children", "food", "kind", "country", "number", "line",
-        "tell", "does", "same", "mean", "differ", "boy", "did", "three", "air", "land",
-        "must", "big", "such", "act", "why", "ask", "men", "went", "light", "try",
-        "mother", "earth", "father", "stand", "page", "should", "found", "answer", "grow", "study",
-        "plant", "cover", "sun", "four", "state", "eye", "tree", "cross", "farm", "story",
-        "saw", "far", "sea", "draw", "late", "press", "life", "north", "white", "got",
-        "walk", "example", "ease", "paper", "group", "music", "those", "mark", "letter", "mile",
-        "river", "car", "feet", "care", "second", "book", "carry", "took", "science", "eat",
-        "room", "friend", "began", "idea", "fish", "mountain", "once", "base", "hear", "horse",
-        "cut", "watch", "color", "face", "wood", "main", "enough", "plain", "girl", "usual",
-        "young", "ready", "above", "ever", "red", "list", "though", "feel", "talk", "bird",
-        "soon", "body", "dog", "family", "direct", "pose", "song", "measure", "product", "black",
-        "short", "numeral", "class", "wind", "question", "happen", "complete", "ship", "area", "half",
-        "rock", "order", "fire", "south", "problem", "piece", "told", "knew", "pass", "since",
-        "top", "whole", "king", "space", "heard", "best", "hour", "better", "true", "during",
-        "hundred", "five", "remember", "step", "hold", "west", "ground", "interest", "reach", "fast",
-        "verb", "sing", "listen", "six", "table", "travel", "less", "morning", "ten", "simple",
-        "several", "vowel", "toward", "war", "lay", "against", "pattern", "slow", "center", "love",
-        "person", "money", "serve", "appear", "road", "map", "rain", "rule", "govern", "pull",
-        "cold", "notice", "voice", "unit", "power", "town", "fine", "certain", "fly", "fall",
-        "lead", "cry", "dark", "machine", "note", "wait", "plan", "figure", "star", "box",
-        "noun", "field", "rest", "correct", "able", "pound", "done", "beauty", "drive", "stood",
-        "contain", "front", "teach", "week", "final", "gave", "green", "oh", "quick", "develop",
-        "ocean", "warm", "free", "minute", "strong", "special", "mind", "behind", "clear", "tail",
-        "produce", "fact", "street", "inch", "lot", "nothing", "course", "stay", "wheel", "full",
-        "force", "blue", "object", "decide", "surface", "deep", "moon", "island", "foot", "system",
-        "busy", "test", "record", "boat", "common", "gold", "possible", "plane", "age", "dry",
-        "wonder", "laugh", "thousand", "ago", "ran", "check", "game", "shape", "yes", "hot",
-        "miss", "brought", "heat", "snow", "bed", "bring", "sit", "perhaps", "fill", "east",
-        "weight", "language", "among", "please", "thank", "hello", "okay", "sorry", "welcome", "goodbye",
-        "maybe", "today", "tomorrow", "yesterday", "evening", "afternoon", "tonight", "happy", "awesome", "amazing",
-        "beautiful", "wonderful", "perfect", "nice", "cool", "funny", "thanks", "congrats", "birthday", "party",
-        "dinner", "lunch", "breakfast", "coffee", "meeting", "message", "phone", "email", "address", "name",
-        "password", "account", "update", "download", "upload", "don't", "can't", "won't", "i'm", "it's",
-        "you're", "he's", "she's", "they're", "i've", "i'd", "i'll", "didn't", "isn't", "haven't",
-        "hasn't", "wasn't", "weren't", "couldn't", "shouldn't", "wouldn't", "doesn't", "there's", "that's", "what's",
-        "who's", "let's"
-    )
 }

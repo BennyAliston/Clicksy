@@ -102,18 +102,7 @@ class ClipboardManagerService(
     }
 
     private fun isPasswordField(inputType: Int): Boolean {
-        val maskClass = inputType and android.text.InputType.TYPE_MASK_CLASS
-        val maskVariation = inputType and android.text.InputType.TYPE_MASK_VARIATION
-        
-        val isTextPassword = maskClass == android.text.InputType.TYPE_CLASS_TEXT && (
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        )
-        val isNumberPassword = maskClass == android.text.InputType.TYPE_CLASS_NUMBER &&
-            maskVariation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            
-        return isTextPassword || isNumberPassword
+        return com.clicksy.keyboard.util.InputTypeDetector.isPasswordField(inputType)
     }
 
     private fun isOtpOrVerificationCode(text: String): Boolean {

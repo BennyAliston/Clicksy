@@ -55,7 +55,11 @@ object ClicksyTheme {
  * Helper to dynamically extract the dominant brand color of the target application.
  * Uses hardcoded values for common applications, and extracts & averages launcher icon pixels as fallback.
  */
-fun getAppDominantColor(context: Context, packageName: String): Color {
+fun getAppDominantColor(context: Context, packageName: String): Color? {
+    if (packageName.isEmpty() || packageName == "com.clicksy.keyboard" || packageName == "android") {
+        return null
+    }
+
     // Highly optimized overrides for common popular applications
     when (packageName) {
         "com.whatsapp" -> return Color(0xFF25D366)
@@ -66,10 +70,9 @@ fun getAppDominantColor(context: Context, packageName: String): Color {
         "com.slack" -> return Color(0xFF4A154B)
         "com.reddit.frontpage" -> return Color(0xFFFF4500)
         "com.twitter.android", "com.x.android" -> return Color(0xFF1DA1F2)
-        "com.clicksy.keyboard" -> return Color(0xFFFFE156)
     }
 
-    try {
+    return try {
         val pm = context.packageManager
         val appInfo = pm.getApplicationInfo(packageName, 0)
         val drawable = pm.getApplicationIcon(appInfo)
@@ -94,11 +97,12 @@ fun getAppDominantColor(context: Context, packageName: String): Color {
         val hsl = FloatArray(3)
         android.graphics.Color.colorToHSV(colorInt, hsl)
         if (hsl[1] < 0.15f || hsl[2] < 0.15f || hsl[2] > 0.95f) {
-            return Color(0xFFFFE156) // Fallback to Sunshine yellow
+            null
+        } else {
+            Color(colorInt)
         }
-        return Color(colorInt)
     } catch (e: Exception) {
-        return Color(0xFFFFE156)
+        null
     }
 }
 
@@ -119,20 +123,60 @@ fun Color.toPastel(isDark: Boolean): Color {
 }
 
 /**
- * Construct a dynamic, app-adaptive neubrutalist color scheme.
- * The keyboard adapts dynamically to the target application icon's colors.
+ * Construct a dynamic, device- and app-adaptive neubrutalist color scheme.
+ * The keyboard adapts dynamically to the device's theme (Dark vs Light mode)
+ * and uses Android Material You dynamic wallpaper colors on Android 12+.
  */
 @Composable
 fun getAdaptiveColorScheme(packageName: String, isDark: Boolean): ClicksyColorScheme {
     val context = LocalContext.current
-    
-    val brandColor = remember(packageName) {
+
+    val appColor = remember(packageName) {
         getAppDominantColor(context, packageName)
     }
-    
-    return AdaptiveDarkBase.copy(
-        accentKeyBackground = brandColor
-    )
+
+    val baseScheme = if (isDark) AdaptiveDarkBase else AdaptiveLightBase
+
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val dynamicColors = if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        val accentColor = appColor ?: dynamicColors.primary
+
+        if (isDark) {
+            baseScheme.copy(
+                background = dynamicColors.surface,
+                keyBackground = dynamicColors.surfaceContainerHigh,
+                accentKeyBackground = accentColor,
+                actionKeyBackground = dynamicColors.primary,
+                textPrimary = dynamicColors.onSurface,
+                textSecondary = dynamicColors.onSurfaceVariant,
+                textOnAction = dynamicColors.onPrimary,
+                suggestionBarBackground = dynamicColors.surfaceContainerLowest,
+                suggestionText = dynamicColors.onSurface,
+                popupBackground = dynamicColors.surfaceContainerHigh,
+                border = Color(0xFF000000),
+                shadow = Color(0xFF000000)
+            )
+        } else {
+            baseScheme.copy(
+                background = dynamicColors.surfaceContainer,
+                keyBackground = Color.White,
+                accentKeyBackground = accentColor,
+                actionKeyBackground = dynamicColors.primary,
+                textPrimary = dynamicColors.onSurface,
+                textSecondary = dynamicColors.onSurfaceVariant,
+                textOnAction = dynamicColors.onPrimary,
+                suggestionBarBackground = dynamicColors.surfaceContainerHigh,
+                suggestionText = dynamicColors.onSurface,
+                popupBackground = Color.White,
+                border = Color(0xFF1A1A2E),
+                shadow = Color(0xFF1A1A2E)
+            )
+        }
+    } else {
+        baseScheme.copy(
+            accentKeyBackground = appColor ?: baseScheme.accentKeyBackground
+        )
+    }
 }
 
 /**

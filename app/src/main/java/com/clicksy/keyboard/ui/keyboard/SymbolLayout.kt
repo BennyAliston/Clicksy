@@ -11,20 +11,18 @@ import androidx.compose.ui.unit.dp
 import com.clicksy.keyboard.ui.theme.ClicksyTheme
 import com.clicksy.keyboard.ui.theme.ClicksyTypography
 
+private val SYMBOLS_PAGE_1_ROW_1 = arrayOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+private val SYMBOLS_PAGE_1_ROW_2 = arrayOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/")
+private val SYMBOLS_PAGE_1_ROW_3 = arrayOf("*", "\"", "'", ":", ";", "!", "?")
+
+private val SYMBOLS_PAGE_2_ROW_1 = arrayOf("~", "`", "|", "•", "√", "π", "÷", "×", "{", "}")
+private val SYMBOLS_PAGE_2_ROW_2 = arrayOf("£", "¥", "€", "¢", "^", "°", "=", "[", "]", "\\")
+private val SYMBOLS_PAGE_2_ROW_3 = arrayOf("%", "©", "®", "™", "✓", "<", ">")
+
 /**
  * Number + Symbol keyboard layouts (two pages).
  *
- * Page 1 (SYMBOLS_1):
- * Row 1: 1 2 3 4 5 6 7 8 9 0
- * Row 2: @ # $ _ & - + ( ) /
- * Row 3: =\< * " ' : ; ! ? ⌫
- * Row 4: ABC 😊 , [space] . ↵
- *
- * Page 2 (SYMBOLS_2):
- * Row 1: ~ ` | • √ π ÷ × { }
- * Row 2: £ ¥ € ¢ ^ ° = [ ] \
- * Row 3: ?123 % © ® ™ ✓ < > ⌫
- * Row 4: ABC 😊 , [space] . ↵
+ * Optimized with static matrices and zero-allocation key iteration.
  */
 @Composable
 fun SymbolLayout(
@@ -35,6 +33,7 @@ fun SymbolLayout(
     onEnter: () -> Unit,
     onSwitchToQwerty: () -> Unit,
     onSwitchToEmoji: () -> Unit,
+    onSwitchToNumpad: () -> Unit,
     onToggleSymbolPage: () -> Unit,
     onSpace: () -> Unit,
     modifier: Modifier = Modifier
@@ -42,19 +41,9 @@ fun SymbolLayout(
     val dims = ClicksyTheme.dimensions
     val spacing = dims.keySpacing
 
-    val rows = if (!isPage2) {
-        listOf(
-            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-            listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/"),
-            listOf("*", "\"", "'", ":", ";", "!", "?")
-        )
-    } else {
-        listOf(
-            listOf("~", "`", "|", "•", "√", "π", "÷", "×", "{", "}"),
-            listOf("£", "¥", "€", "¢", "^", "°", "=", "[", "]", "\\"),
-            listOf("%", "©", "®", "™", "✓", "<", ">")
-        )
-    }
+    val row1 = if (!isPage2) SYMBOLS_PAGE_1_ROW_1 else SYMBOLS_PAGE_2_ROW_1
+    val row2 = if (!isPage2) SYMBOLS_PAGE_1_ROW_2 else SYMBOLS_PAGE_2_ROW_2
+    val row3 = if (!isPage2) SYMBOLS_PAGE_1_ROW_3 else SYMBOLS_PAGE_2_ROW_3
 
     Column(
         modifier = modifier
@@ -67,7 +56,7 @@ fun SymbolLayout(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            rows[0].forEach { char ->
+            row1.forEach { char ->
                 NeuKey(
                     label = char,
                     modifier = Modifier.weight(1f),
@@ -81,7 +70,7 @@ fun SymbolLayout(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            rows[1].forEach { char ->
+            row2.forEach { char ->
                 NeuKey(
                     label = char,
                     modifier = Modifier.weight(1f),
@@ -104,7 +93,7 @@ fun SymbolLayout(
                 onTap = onToggleSymbolPage
             )
 
-            rows[2].forEach { char ->
+            row3.forEach { char ->
                 NeuKey(
                     label = char,
                     modifier = Modifier.weight(1f),
@@ -122,17 +111,25 @@ fun SymbolLayout(
             )
         }
 
-        // Row 4: ABC + emoji + comma + space + period + enter
+        // Row 4: ABC + 1234 (Numpad) + emoji + comma + space + period + enter
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
         ) {
             NeuKey(
                 label = "ABC",
-                modifier = Modifier.weight(1.5f),
+                modifier = Modifier.weight(1.4f),
                 keyType = KeyType.ACCENT,
                 textStyle = ClicksyTypography.keyLabelSmall,
                 onTap = onSwitchToQwerty
+            )
+
+            NeuKey(
+                label = "1234",
+                modifier = Modifier.weight(1.2f),
+                keyType = KeyType.ACCENT,
+                textStyle = ClicksyTypography.keyLabelSmall,
+                onTap = onSwitchToNumpad
             )
 
             NeuKey(
@@ -144,20 +141,20 @@ fun SymbolLayout(
 
             NeuKey(
                 label = ",",
-                modifier = Modifier.weight(1.0f),
+                modifier = Modifier.weight(0.8f),
                 onTap = { onCharacterInput(",") }
             )
 
             NeuKey(
                 label = "",
-                modifier = Modifier.weight(4.0f),
+                modifier = Modifier.weight(3.3f),
                 textStyle = ClicksyTypography.keyLabelSmall,
                 onTap = onSpace
             )
 
             NeuKey(
                 label = ".",
-                modifier = Modifier.weight(1.0f),
+                modifier = Modifier.weight(0.8f),
                 onTap = { onCharacterInput(".") }
             )
 

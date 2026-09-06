@@ -24,23 +24,41 @@ class HapticFeedbackManager(context: Context) {
         null
     }
 
+    private val hasVibrator: Boolean = try {
+        vibrator?.hasVibrator() == true
+    } catch (e: Exception) {
+        false
+    }
+
+    private val tickEffect: VibrationEffect? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+        } else {
+            VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE)
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    private val clickEffect: VibrationEffect? = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
+        } else {
+            VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE)
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     /**
      * Light haptic tick for standard key presses.
      */
     fun performKeyTick() {
+        if (!hasVibrator) return
         val vib = vibrator ?: return
+        val effect = tickEffect ?: return
         try {
-            if (!vib.hasVibrator()) return
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                vib.vibrate(
-                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-                )
-            } else {
-                vib.vibrate(
-                    VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE)
-                )
-            }
+            vib.vibrate(effect)
         } catch (e: Exception) {
             // Safe fallback
         }
@@ -50,19 +68,11 @@ class HapticFeedbackManager(context: Context) {
      * Medium haptic click for special keys (shift, enter, mode switch).
      */
     fun performKeyClick() {
+        if (!hasVibrator) return
         val vib = vibrator ?: return
+        val effect = clickEffect ?: return
         try {
-            if (!vib.hasVibrator()) return
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                vib.vibrate(
-                    VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)
-                )
-            } else {
-                vib.vibrate(
-                    VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE)
-                )
-            }
+            vib.vibrate(effect)
         } catch (e: Exception) {
             // Safe fallback
         }

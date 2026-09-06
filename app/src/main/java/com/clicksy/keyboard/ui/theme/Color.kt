@@ -124,3 +124,21 @@ val AdaptiveDarkBase = ClicksyColorScheme(
     divider = Color(0xFF000000),
     pressedOverlay = Color(0x25FFFFFF)
 )
+
+// 👤 Adaptive Light Base — optimized light neubrutal base for device/brand coloring
+val AdaptiveLightBase = ClicksyColorScheme(
+    background = Color(0xFFF2F2F6),
+    keyBackground = Color(0xFFFFFFFF),
+    accentKeyBackground = Color(0xFFFFE156), // Fallback yellow, replaced dynamically
+    actionKeyBackground = Color(0xFF1A1A2E),
+    textPrimary = Color(0xFF1A1A2E),
+    textSecondary = Color(0xFF6B6B80),
+    textOnAction = Color(0xFFFFFFFF),
+    border = Color(0xFF1A1A2E),
+    shadow = Color(0xFF1A1A2E),
+    suggestionBarBackground = Color(0xFFE6E6EC),
+    suggestionText = Color(0xFF1A1A2E),
+    popupBackground = Color(0xFFFFFFFF),
+    divider = Color(0xFF1A1A2E),
+    pressedOverlay = Color(0x15000000)
+)

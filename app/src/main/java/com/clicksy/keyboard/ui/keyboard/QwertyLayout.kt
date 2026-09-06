@@ -3,24 +3,32 @@ package com.clicksy.keyboard.ui.keyboard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.clicksy.keyboard.data.DetectedInputType
 import com.clicksy.keyboard.data.ShiftState
 import com.clicksy.keyboard.ui.theme.ClicksyTheme
 import com.clicksy.keyboard.ui.theme.ClicksyTypography
 
+private val NUMBER_ROW = arrayOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+
+private val QWERTY_ROW_1 = arrayOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+private val QWERTY_ROW_1_SYMBOLS = arrayOf("~", "\\", "|", "=", "/", "_", "<", ">", "[", "]")
+
+private val QWERTY_ROW_2 = arrayOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+private val QWERTY_ROW_2_SYMBOLS = arrayOf("@", "#", "$", "%", "&", "-", "+", "(", ")")
+
+private val QWERTY_ROW_3 = arrayOf("z", "x", "c", "v", "b", "n", "m")
+private val QWERTY_ROW_3_SYMBOLS = arrayOf("*", "\"", "'", ":", ";", "!", "?")
+
 /**
  * Standard QWERTY keyboard layout.
  *
- * Layout:
- * Row 1: Q W E R T Y U I O P
- * Row 2:  A S D F G H J K L
- * Row 3: ⇧ Z X C V B N M ⌫
- * Row 4: ?123 😊 , [  space  ] . ↵
+ * Optimized with static keycap matrices and minimal recomposition cost.
  */
 @Composable
 fun QwertyLayout(
@@ -35,17 +43,12 @@ fun QwertyLayout(
     onSwitchToEmoji: () -> Unit,
     onSpace: () -> Unit,
     modifier: Modifier = Modifier,
-    showNumberRow: Boolean = false
+    showNumberRow: Boolean = false,
+    detectedInputType: DetectedInputType = DetectedInputType.TEXT
 ) {
     val dims = ClicksyTheme.dimensions
     val spacing = dims.keySpacing
-
-    val displayChar: (String) -> String = { char ->
-        when (shiftState) {
-            ShiftState.OFF -> char.lowercase()
-            ShiftState.ONCE, ShiftState.CAPS_LOCK -> char.uppercase()
-        }
-    }
+    val isShiftActive = shiftState != ShiftState.OFF
 
     Column(
         modifier = modifier
@@ -58,7 +61,7 @@ fun QwertyLayout(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing)
             ) {
-                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0").forEach { numChar ->
+                NUMBER_ROW.forEach { numChar ->
                     NeuKey(
                         label = numChar,
                         modifier = Modifier.weight(1f),
@@ -73,26 +76,34 @@ fun QwertyLayout(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p").forEach { char ->
+            QWERTY_ROW_1.forEachIndexed { index, char ->
+                val label = if (isShiftActive) char.uppercase() else char
+                val symbol = QWERTY_ROW_1_SYMBOLS.getOrNull(index)
                 NeuKey(
-                    label = displayChar(char),
+                    label = label,
+                    subLabel = symbol,
                     modifier = Modifier.weight(1f),
-                    onTap = { onCharacterInput(displayChar(char)) }
+                    onTap = { onCharacterInput(label) },
+                    onLongPress = symbol?.let { s -> { onCharacterInput(s) } }
                 )
             }
         }
 
-        // Row 2: A S D F G H J K L (indented using weight-based spacers to scale horizontally)
+        // Row 2: A S D F G H J K L
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
         ) {
             Spacer(modifier = Modifier.weight(0.5f))
-            listOf("a", "s", "d", "f", "g", "h", "j", "k", "l").forEach { char ->
+            QWERTY_ROW_2.forEachIndexed { index, char ->
+                val label = if (isShiftActive) char.uppercase() else char
+                val symbol = QWERTY_ROW_2_SYMBOLS.getOrNull(index)
                 NeuKey(
-                    label = displayChar(char),
+                    label = label,
+                    subLabel = symbol,
                     modifier = Modifier.weight(1f),
-                    onTap = { onCharacterInput(displayChar(char)) }
+                    onTap = { onCharacterInput(label) },
+                    onLongPress = symbol?.let { s -> { onCharacterInput(s) } }
                 )
             }
             Spacer(modifier = Modifier.weight(0.5f))
@@ -111,16 +122,20 @@ fun QwertyLayout(
                     ShiftState.CAPS_LOCK -> "⇪"
                 },
                 modifier = Modifier.weight(1.5f),
-                keyType = if (shiftState != ShiftState.OFF) KeyType.ACCENT else KeyType.CHARACTER,
+                keyType = if (isShiftActive) KeyType.ACCENT else KeyType.CHARACTER,
                 onTap = onShiftToggle,
                 onLongPress = onShiftLock
             )
 
-            listOf("z", "x", "c", "v", "b", "n", "m").forEach { char ->
+            QWERTY_ROW_3.forEachIndexed { index, char ->
+                val label = if (isShiftActive) char.uppercase() else char
+                val symbol = QWERTY_ROW_3_SYMBOLS.getOrNull(index)
                 NeuKey(
-                    label = displayChar(char),
+                    label = label,
+                    subLabel = symbol,
                     modifier = Modifier.weight(1f),
-                    onTap = { onCharacterInput(displayChar(char)) }
+                    onTap = { onCharacterInput(label) },
+                    onLongPress = symbol?.let { s -> { onCharacterInput(s) } }
                 )
             }
 
@@ -134,7 +149,7 @@ fun QwertyLayout(
             )
         }
 
-        // Row 4: ?123 + 😊 + , + space + . + Enter
+        // Row 4: Adaptive bottom row based on detected input type
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing)
@@ -154,25 +169,93 @@ fun QwertyLayout(
                 onTap = onSwitchToEmoji
             )
 
-            NeuKey(
-                label = ",",
-                modifier = Modifier.weight(1.0f),
-                onTap = { onCharacterInput(",") }
-            )
+            when (detectedInputType) {
+                DetectedInputType.EMAIL -> {
+                    NeuKey(
+                        label = "@",
+                        modifier = Modifier.weight(1.0f),
+                        keyType = KeyType.ACCENT,
+                        onTap = { onCharacterInput("@") }
+                    )
 
-            // Space bar
-            NeuKey(
-                label = "English",
-                modifier = Modifier.weight(4.0f),
-                textStyle = ClicksyTypography.keyLabelSmall,
-                onTap = onSpace
-            )
+                    // Space bar (compact for email)
+                    NeuKey(
+                        label = "English",
+                        modifier = Modifier.weight(3.0f),
+                        textStyle = ClicksyTypography.keyLabelSmall,
+                        onTap = onSpace
+                    )
 
-            NeuKey(
-                label = ".",
-                modifier = Modifier.weight(1.0f),
-                onTap = { onCharacterInput(".") }
-            )
+                    NeuKey(
+                        label = ".",
+                        subLabel = "/",
+                        modifier = Modifier.weight(1.0f),
+                        onTap = { onCharacterInput(".") },
+                        onLongPress = { onCharacterInput("/") }
+                    )
+
+                    NeuKey(
+                        label = ".com",
+                        modifier = Modifier.weight(1.0f),
+                        keyType = KeyType.ACCENT,
+                        textStyle = ClicksyTypography.keyLabelSmall,
+                        onTap = { onCharacterInput(".com") }
+                    )
+                }
+                DetectedInputType.URI -> {
+                    NeuKey(
+                        label = "/",
+                        modifier = Modifier.weight(1.0f),
+                        keyType = KeyType.ACCENT,
+                        onTap = { onCharacterInput("/") }
+                    )
+
+                    // Space bar (compact for URL)
+                    NeuKey(
+                        label = "English",
+                        modifier = Modifier.weight(3.0f),
+                        textStyle = ClicksyTypography.keyLabelSmall,
+                        onTap = onSpace
+                    )
+
+                    NeuKey(
+                        label = ".",
+                        modifier = Modifier.weight(1.0f),
+                        onTap = { onCharacterInput(".") }
+                    )
+
+                    NeuKey(
+                        label = ".com",
+                        modifier = Modifier.weight(1.0f),
+                        keyType = KeyType.ACCENT,
+                        textStyle = ClicksyTypography.keyLabelSmall,
+                        onTap = { onCharacterInput(".com") }
+                    )
+                }
+                else -> {
+                    NeuKey(
+                        label = ",",
+                        modifier = Modifier.weight(1.0f),
+                        onTap = { onCharacterInput(",") }
+                    )
+
+                    // Standard Space bar
+                    NeuKey(
+                        label = "English",
+                        modifier = Modifier.weight(4.0f),
+                        textStyle = ClicksyTypography.keyLabelSmall,
+                        onTap = onSpace
+                    )
+
+                    NeuKey(
+                        label = ".",
+                        subLabel = "/",
+                        modifier = Modifier.weight(1.0f),
+                        onTap = { onCharacterInput(".") },
+                        onLongPress = { onCharacterInput("/") }
+                    )
+                }
+            }
 
             NeuKey(
                 label = enterLabel,

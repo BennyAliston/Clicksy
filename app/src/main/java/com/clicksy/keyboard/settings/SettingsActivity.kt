@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -207,6 +208,7 @@ private fun SettingsScreen(
 ) {
     val colors = ClicksyTheme.colors
     val scrollState = rememberScrollState()
+    val uriHandler = LocalUriHandler.current
 
     Column(
         modifier = Modifier
@@ -527,6 +529,38 @@ private fun SettingsScreen(
                     style = ClicksyTypography.clipboardText,
                     color = colors.textSecondary
                 )
+                Spacer(modifier = Modifier.height(14.dp))
+                // Donate / Buy Me a Coffee button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .drawBehind {
+                            drawRoundRect(
+                                color = colors.shadow,
+                                topLeft = Offset(3.dp.toPx(), 3.dp.toPx()),
+                                size = Size(size.width, size.height),
+                                cornerRadius = CornerRadius(8.dp.toPx())
+                            )
+                        }
+                        .background(Color(0xFFFFDD00), RoundedCornerShape(8.dp))
+                        .border(2.5.dp, colors.border, RoundedCornerShape(8.dp))
+                        .clickable {
+                            try {
+                                uriHandler.openUri("https://buymeacoffee.com/bennyaliston")
+                            } catch (_: Exception) { }
+                        }
+                        .padding(vertical = 10.dp, horizontal = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.buy_me_a_coffee),
+                        style = ClicksyTypography.suggestionText.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        ),
+                        color = Color(0xFF1A1A2E)
+                    )
+                }
             }
         }
 

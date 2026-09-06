@@ -24,7 +24,6 @@ enum class SoundType {
 class SoundFeedbackManager(private val context: Context) {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val executor = Executors.newSingleThreadExecutor()
-    private val playExecutor = Executors.newCachedThreadPool()
 
     private val sampleRate = 22050 // Hz
 
@@ -86,27 +85,25 @@ class SoundFeedbackManager(private val context: Context) {
     fun playSound(type: SoundType) {
         if (type == SoundType.MUTE) return
 
-        playExecutor.submit {
-            try {
-                if (type == SoundType.SYSTEM) {
-                    audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
-                    return@submit
-                }
-
-                val soundId = when (type) {
-                    SoundType.BUBBLE -> bubbleSoundId
-                    SoundType.WOODBLOCK -> woodblockSoundId
-                    SoundType.TYPEWRITER -> typewriterSoundId
-                    SoundType.CHIME -> chimeSoundId
-                    else -> 0
-                }
-
-                if (soundId != 0) {
-                    soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+        try {
+            if (type == SoundType.SYSTEM) {
+                audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
+                return
             }
+
+            val soundId = when (type) {
+                SoundType.BUBBLE -> bubbleSoundId
+                SoundType.WOODBLOCK -> woodblockSoundId
+                SoundType.TYPEWRITER -> typewriterSoundId
+                SoundType.CHIME -> chimeSoundId
+                else -> 0
+            }
+
+            if (soundId != 0) {
+                soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

@@ -1,5 +1,6 @@
 package com.clicksy.keyboard.ui.theme
 
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +26,17 @@ object ClicksyTypography {
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
         letterSpacing = 0.sp
+    )
+
+    /** Sub-label for secondary symbols on long-press */
+    val keySubLabel = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 9.sp,
+        letterSpacing = 0.sp,
+        platformStyle = PlatformTextStyle(
+            includeFontPadding = false
+        )
     )
 
     /** Suggestion bar text */

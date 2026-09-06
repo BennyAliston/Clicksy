@@ -2,11 +2,17 @@ package com.clicksy.keyboard.service
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -37,6 +43,8 @@ import com.clicksy.keyboard.data.NeuTheme
 import com.clicksy.keyboard.data.KeyboardSize
 import com.clicksy.keyboard.data.ShiftState
 import com.clicksy.keyboard.data.KeyboardMode
+import com.clicksy.keyboard.data.DetectedInputType
+import com.clicksy.keyboard.data.AutoCapsType
 import com.clicksy.keyboard.data.DictionaryProvider
 import com.clicksy.keyboard.ui.keyboard.KeyboardScreen
 import com.clicksy.keyboard.ui.theme.ClicksyTheme
@@ -46,6 +54,11 @@ import com.clicksy.keyboard.util.HapticFeedbackManager
 import com.clicksy.keyboard.util.SpeechRecognizerHelper
 import com.clicksy.keyboard.util.SoundFeedbackManager
 import com.clicksy.keyboard.util.SoundType
+import com.clicksy.keyboard.util.InputConfiguration
+import com.clicksy.keyboard.util.InputTypeDetector
+
+private val AUTO_CAPS_REGEX = Regex("(?:[\\.!?]|\\n)\\s+$")
+private val WORD_SPLIT_REGEX = Regex("[\\s.,;:!?()\\[\\]{}\"<>/\\\\=+\\-*&^%$#@~`|]+")
 
 /**
  * The core InputMethodService for Clicksy.
@@ -95,10 +108,15 @@ class ClicksyService : InputMethodService(),
     private var activePackageName by mutableStateOf("com.clicksy.keyboard")
     private var shiftState by mutableStateOf(ShiftState.OFF)
     private var keyboardMode by mutableStateOf(KeyboardMode.QWERTY)
+    private var detectedInputType by mutableStateOf(DetectedInputType.TEXT)
+    private var suggestionsAllowed by mutableStateOf(true)
+    private var currentInputConfig by mutableStateOf(InputConfiguration())
     private val recentEmojis = mutableStateListOf<String>()
     private var enterLabel by mutableStateOf("↵")
     private var lastAutoCorrectedOriginal: String? = null
     private var lastAutoCorrectedReplacement: String? = null
+    private var lastSpaceTapTime = 0L
+    private var isDeviceDarkTheme by mutableStateOf(false)
 
     private lateinit var shiftStateManager: ShiftStateManager
 
@@ -139,17 +157,21 @@ class ClicksyService : InputMethodService(),
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
 
         loadPreferences()
+        isDeviceDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         shiftStateManager = ShiftStateManager { newState ->
             shiftState = newState
         }
         loadRecentEmojis()
-        DictionaryProvider.initialize(this)
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            DictionaryProvider.initialize(this@ClicksyService)
+        }
     }
 
     override fun onCreateInputView(): View {
         // Ensure owners are set on the decor view BEFORE ComposeView is attached to prevent IllegalStateException
         // and allow WindowInsets to propagate to the view tree by disabling decor fits system windows
         window?.window?.let { win ->
+            win.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
             androidx.core.view.WindowCompat.setDecorFitsSystemWindows(win, false)
             val decorView = win.decorView
             decorView.setViewTreeLifecycleOwner(this)
@@ -164,8 +186,8 @@ class ClicksyService : InputMethodService(),
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
 
-            // Dispose the composition when the ComposeView is detached from the window
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            // Keep the composition alive while the IME Service lives so reopening the keyboard has 0ms delay
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(this@ClicksyService))
 
             // Wire up lifecycle owners for Compose
             // CRITICAL: Must be set before setContent
@@ -176,7 +198,7 @@ class ClicksyService : InputMethodService(),
             setContent {
                 val dimensions = remember(keyboardSize, roundedKeysEnabled) {
                     val defaultDims = ClicksyDimensions(
-                        keyCornerRadius = if (roundedKeysEnabled) 20.dp else 8.dp
+                        keyCornerRadius = if (roundedKeysEnabled) 14.dp else 8.dp
                     )
                     when (keyboardSize) {
                         KeyboardSize.SMALL -> defaultDims.copy(keyHeight = 42.dp)
@@ -186,7 +208,7 @@ class ClicksyService : InputMethodService(),
                     }
                 }
                 ClicksyTheme(
-                    colorScheme = currentTheme.toColorScheme(activePackageName = activePackageName),
+                    colorScheme = currentTheme.toColorScheme(activePackageName = activePackageName, isDark = isDeviceDarkTheme),
                     dimensions = dimensions
                 ) {
                     KeyboardScreen(
@@ -219,17 +241,37 @@ class ClicksyService : InputMethodService(),
                         autocompleteEnabled = autocompleteEnabled,
                         keyboardSize = keyboardSize,
                         showNumberRow = showNumberRow,
+                        detectedInputType = detectedInputType,
+                        suggestionsAllowed = suggestionsAllowed,
                         onTextInput = { text ->
                             lastAutoCorrectedOriginal = null
                             lastAutoCorrectedReplacement = null
-                            // If it's a suggestion selection, it ends with a space
-                            if (text.endsWith(" ")) {
+                            val ic = currentInputConnection
+
+                            // Smart Punctuation: if user types a punctuation mark immediately after a space, snap it: "hello " + "." -> "hello. "
+                            // Only apply in standard text mode
+                            if (detectedInputType == DetectedInputType.TEXT) {
+                                if (text.length == 1 && (text == "." || text == "," || text == "!" || text == "?" || text == ";" || text == ":")) {
+                                    val textBefore = ic?.getTextBeforeCursor(1, 0)?.toString() ?: ""
+                                    if (textBefore == " ") {
+                                        ic?.deleteSurroundingText(1, 0)
+                                        ic?.commitText("$text ", 1)
+                                        if (text == "." || text == "!" || text == "?") {
+                                            shiftStateManager.forceState(ShiftState.ONCE)
+                                        }
+                                        return@KeyboardScreen
+                                    }
+                                }
+                            }
+
+                            // If it's a suggestion selection, it ends with a space (only learn for text mode)
+                            if (text.endsWith(" ") && suggestionsAllowed && detectedInputType == DetectedInputType.TEXT) {
                                 val word = text.trim()
                                 if (word.isNotEmpty()) {
                                     DictionaryProvider.learnWord(this@ClicksyService, word)
                                 }
                             }
-                            currentInputConnection?.commitText(text, 1)
+                            ic?.commitText(text, 1)
                             shiftStateManager.handleCharacterInput(text)
                             if (shiftState == ShiftState.OFF) {
                                 checkAutoCaps()
@@ -278,7 +320,9 @@ class ClicksyService : InputMethodService(),
                         onEnterAction = {
                             lastAutoCorrectedOriginal = null
                             lastAutoCorrectedReplacement = null
-                            learnLastTypedWord()
+                            if (suggestionsAllowed && detectedInputType == DetectedInputType.TEXT) {
+                                learnLastTypedWord()
+                            }
                             handleEnterAction()
                             shiftStateManager.resetDoubleTapTimer()
                             if (shiftState == ShiftState.OFF) {
@@ -286,26 +330,50 @@ class ClicksyService : InputMethodService(),
                             }
                         },
                         onSpace = {
+                            val currentTime = System.currentTimeMillis()
+                            val delta = currentTime - lastSpaceTapTime
+                            val ic = currentInputConnection
+                            val textBefore = ic?.getTextBeforeCursor(2, 0)?.toString() ?: ""
+
+                            // Double-tap Space shortcut: converts "  " into ". " and triggers Auto-Caps (only for standard text)
+                            if (detectedInputType == DetectedInputType.TEXT && delta in 60..500 && textBefore.endsWith(" ") && !textBefore.endsWith(". ")) {
+                                ic?.deleteSurroundingText(1, 0)
+                                ic?.commitText(". ", 1)
+                                lastSpaceTapTime = 0L
+                                lastAutoCorrectedOriginal = null
+                                lastAutoCorrectedReplacement = null
+                                shiftStateManager.forceState(ShiftState.ONCE)
+                                return@KeyboardScreen
+                            }
+                            lastSpaceTapTime = currentTime
+
                             val currentWord = getCurrentWordBeforeCursor()
-                            if (autocompleteEnabled && currentWord.isNotBlank()) {
-                                val correction = DictionaryProvider.getAutoCorrection(currentWord)
-                                if (correction != null && correction.lowercase() != currentWord.lowercase()) {
-                                    val ic = currentInputConnection
+                            val prevWord = getPreviousWordBeforeCursor()
+
+                            if (autocompleteEnabled && suggestionsAllowed && detectedInputType == DetectedInputType.TEXT && currentWord.isNotBlank()) {
+                                val correction = DictionaryProvider.getAutoCorrection(currentWord, prevWord)
+                                if (correction != null && !correction.equals(currentWord, ignoreCase = false)) {
                                     if (ic != null) {
                                         ic.deleteSurroundingText(currentWord.length, 0)
                                         ic.commitText("$correction ", 1)
                                         lastAutoCorrectedOriginal = currentWord
                                         lastAutoCorrectedReplacement = correction
+                                        DictionaryProvider.learnWord(this@ClicksyService, correction)
+                                        if (prevWord.isNotBlank()) {
+                                            DictionaryProvider.learnWordSequence(this@ClicksyService, prevWord, correction)
+                                        }
                                     }
                                 } else {
                                     learnLastTypedWord()
-                                    currentInputConnection?.commitText(" ", 1)
+                                    ic?.commitText(" ", 1)
                                     lastAutoCorrectedOriginal = null
                                     lastAutoCorrectedReplacement = null
                                 }
                             } else {
-                                learnLastTypedWord()
-                                currentInputConnection?.commitText(" ", 1)
+                                if (suggestionsAllowed && detectedInputType == DetectedInputType.TEXT) {
+                                    learnLastTypedWord()
+                                }
+                                ic?.commitText(" ", 1)
                                 lastAutoCorrectedOriginal = null
                                 lastAutoCorrectedReplacement = null
                             }
@@ -327,11 +395,45 @@ class ClicksyService : InputMethodService(),
                             val ic = currentInputConnection
                             if (ic != null) {
                                 val word = getCurrentWordBeforeCursor()
-                                if (word.isNotEmpty()) {
-                                    ic.deleteSurroundingText(word.length, 0)
+                                val prevWord = getPreviousWordBeforeCursor()
+                                val cleaned = suggestion.removeSurrounding("\"")
+
+                                if (detectedInputType == DetectedInputType.EMAIL) {
+                                    if (cleaned.startsWith("@")) {
+                                        if (word.contains("@")) {
+                                            val username = word.substringBefore("@")
+                                            ic.deleteSurroundingText(word.length, 0)
+                                            ic.commitText("$username$cleaned", 1)
+                                        } else {
+                                            ic.commitText(cleaned, 1)
+                                        }
+                                    } else {
+                                        if (word.isNotEmpty()) {
+                                            ic.deleteSurroundingText(word.length, 0)
+                                        }
+                                        ic.commitText(cleaned, 1)
+                                    }
+                                } else if (detectedInputType == DetectedInputType.URI) {
+                                    if (word.isNotEmpty() && cleaned.startsWith(".")) {
+                                        ic.commitText(cleaned, 1)
+                                    } else {
+                                        if (word.isNotEmpty()) {
+                                            ic.deleteSurroundingText(word.length, 0)
+                                        }
+                                        ic.commitText(cleaned, 1)
+                                    }
+                                } else {
+                                    if (word.isNotEmpty()) {
+                                        ic.deleteSurroundingText(word.length, 0)
+                                    }
+                                    ic.commitText("$cleaned ", 1)
+                                    if (suggestionsAllowed && detectedInputType == DetectedInputType.TEXT) {
+                                        DictionaryProvider.learnWord(this@ClicksyService, cleaned)
+                                        if (prevWord.isNotBlank()) {
+                                            DictionaryProvider.learnWordSequence(this@ClicksyService, prevWord, cleaned)
+                                        }
+                                    }
                                 }
-                                ic.commitText("$suggestion ", 1)
-                                DictionaryProvider.learnWord(this@ClicksyService, suggestion)
                             }
                             lastAutoCorrectedOriginal = null
                             lastAutoCorrectedReplacement = null
@@ -345,7 +447,8 @@ class ClicksyService : InputMethodService(),
                         },
                         getPreviousWord = {
                             getPreviousWordBeforeCursor()
-                        }
+                        },
+                        getCursorContext = ::getCursorContext
                     )
                 }
             }
@@ -372,18 +475,47 @@ class ClicksyService : InputMethodService(),
         _lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
     }
 
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        if (::clipboardManagerService.isInitialized) {
+            clipboardManagerService.updateActiveEditorInfo(attribute)
+        }
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         loadPreferences()
+        val nightMode = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        if (isDeviceDarkTheme != nightMode) {
+            isDeviceDarkTheme = nightMode
+        }
         activePackageName = info?.packageName ?: "com.clicksy.keyboard"
-        updateEnterLabel(info)
+
+        currentInputConfig = InputTypeDetector.detect(info)
+
+        detectedInputType = currentInputConfig.detectedType
+        suggestionsAllowed = currentInputConfig.suggestionsAllowed
+        enterLabel = currentInputConfig.enterLabel
+
+        if (!restarting || keyboardMode == KeyboardMode.QWERTY || keyboardMode == KeyboardMode.NUMPAD) {
+            keyboardMode = currentInputConfig.initialMode
+        }
+
         shiftState = ShiftState.OFF
         shiftStateManager.forceState(ShiftState.OFF)
-        keyboardMode = KeyboardMode.QWERTY
         checkAutoCaps()
+
         if (::clipboardManagerService.isInitialized) {
             clipboardManagerService.updateActiveEditorInfo(info)
             clipboardManagerService.processCurrentClipboard()
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val nightMode = (newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        if (isDeviceDarkTheme != nightMode) {
+            isDeviceDarkTheme = nightMode
         }
     }
 
@@ -406,25 +538,13 @@ class ClicksyService : InputMethodService(),
     // --- Private helpers ---
 
     private fun isPasswordField(inputType: Int): Boolean {
-        val maskClass = inputType and android.text.InputType.TYPE_MASK_CLASS
-        val maskVariation = inputType and android.text.InputType.TYPE_MASK_VARIATION
-        
-        val isTextPassword = maskClass == android.text.InputType.TYPE_CLASS_TEXT && (
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-            maskVariation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        )
-        val isNumberPassword = maskClass == android.text.InputType.TYPE_CLASS_NUMBER &&
-            maskVariation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            
-        return isTextPassword || isNumberPassword
+        return InputTypeDetector.isPasswordField(inputType)
     }
 
     private fun shouldAutoCapitalize(textBeforeCursor: String): Boolean {
         if (textBeforeCursor.isEmpty()) return true
         if (textBeforeCursor.endsWith("\n") || textBeforeCursor.endsWith("\r")) return true
-        val regex = Regex("(?:[\\.!?]|\\n)\\s+$")
-        return regex.containsMatchIn(textBeforeCursor)
+        return AUTO_CAPS_REGEX.containsMatchIn(textBeforeCursor)
     }
 
     private fun checkAutoCaps() {
@@ -444,7 +564,29 @@ class ClicksyService : InputMethodService(),
             return
         }
 
+        val config = currentInputConfig
+        if (config.autoCapsType == AutoCapsType.NONE) {
+            shiftStateManager.forceState(ShiftState.OFF)
+            return
+        }
+
+        if (config.autoCapsType == AutoCapsType.CHARACTERS) {
+            shiftStateManager.forceState(ShiftState.CAPS_LOCK)
+            return
+        }
+
         val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
+
+        if (config.autoCapsType == AutoCapsType.WORDS) {
+            if (textBefore.isEmpty() || textBefore.last().isWhitespace() || textBefore.endsWith("\n")) {
+                shiftStateManager.forceState(ShiftState.ONCE)
+            } else {
+                shiftStateManager.forceState(ShiftState.OFF)
+            }
+            return
+        }
+
+        // SENTENCES
         if (shouldAutoCapitalize(textBefore)) {
             shiftStateManager.forceState(ShiftState.ONCE)
         } else {
@@ -493,28 +635,46 @@ class ClicksyService : InputMethodService(),
     }
 
     private fun updateEnterLabel(info: EditorInfo?) {
-        enterLabel = when (info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)) {
-            EditorInfo.IME_ACTION_SEARCH -> "🔍"
-            EditorInfo.IME_ACTION_SEND -> "Send"
-            EditorInfo.IME_ACTION_GO -> "Go"
-            EditorInfo.IME_ACTION_DONE -> "Done"
-            EditorInfo.IME_ACTION_NEXT -> "→"
-            else -> "↵"
-        }
+        enterLabel = InputTypeDetector.getEnterLabel(info)
     }
 
     private fun handleEnterAction() {
         val info = currentInputEditorInfo
-        val action = info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-            ?: EditorInfo.IME_ACTION_UNSPECIFIED
+        val actionId = currentInputConfig.actionId
 
-        if (action != EditorInfo.IME_ACTION_UNSPECIFIED &&
-            action != EditorInfo.IME_ACTION_NONE
+        if (actionId != EditorInfo.IME_ACTION_UNSPECIFIED &&
+            actionId != EditorInfo.IME_ACTION_NONE
         ) {
-            currentInputConnection?.performEditorAction(action)
+            currentInputConnection?.performEditorAction(actionId)
         } else {
-            currentInputConnection?.commitText("\n", 1)
+            val isMultiline = ((info?.inputType ?: 0) and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+            if (isMultiline) {
+                currentInputConnection?.commitText("\n", 1)
+            } else {
+                val performed = currentInputConnection?.performEditorAction(EditorInfo.IME_ACTION_DONE) == true
+                if (!performed) {
+                    currentInputConnection?.commitText("\n", 1)
+                }
+            }
         }
+    }
+
+    private fun getCursorContext(): Pair<String, String> {
+        val textBefore = currentInputConnection
+            ?.getTextBeforeCursor(80, 0)
+            ?.toString() ?: return Pair("", "")
+
+        val isEndsWithSpace = textBefore.endsWith(" ") || textBefore.endsWith("\n") || textBefore.endsWith("\t")
+        val words = textBefore.trim().split(WORD_SPLIT_REGEX).filter { it.isNotBlank() }
+
+        val currentWord = if (isEndsWithSpace) "" else (words.lastOrNull() ?: "")
+        val previousWord = if (isEndsWithSpace) {
+            words.lastOrNull() ?: ""
+        } else {
+            if (words.size >= 2) words[words.size - 2] else ""
+        }
+
+        return Pair(currentWord, previousWord)
     }
 
     private fun getPreviousWordBeforeCursor(): String {
@@ -522,7 +682,7 @@ class ClicksyService : InputMethodService(),
             ?.getTextBeforeCursor(100, 0)
             ?.toString() ?: return ""
 
-        val words = textBefore.trim().split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
+        val words = textBefore.trim().split(WORD_SPLIT_REGEX)
             .filter { it.isNotBlank() }
 
         return if (words.size >= 2) words[words.size - 2] else if (words.size == 1 && textBefore.endsWith(" ")) words[0] else ""
@@ -536,18 +696,19 @@ class ClicksyService : InputMethodService(),
         if (textBefore.endsWith(" ") || textBefore.endsWith("\n")) return ""
 
         // Find the last word (split by spaces and common delimiters)
-        return textBefore.split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
+        return textBefore.split(WORD_SPLIT_REGEX)
             .lastOrNull()
             ?.takeIf { it.isNotBlank() }
             ?: ""
     }
 
     private fun learnLastTypedWord() {
+        if (!suggestionsAllowed || detectedInputType != DetectedInputType.TEXT) return
         val textBefore = currentInputConnection
             ?.getTextBeforeCursor(100, 0)
             ?.toString() ?: return
 
-        val words = textBefore.trim().split(Regex("[\\s.,;:!?()\\[\\]{}\"']+"))
+        val words = textBefore.trim().split(WORD_SPLIT_REGEX)
             .filter { it.isNotBlank() }
 
         if (words.isNotEmpty()) {

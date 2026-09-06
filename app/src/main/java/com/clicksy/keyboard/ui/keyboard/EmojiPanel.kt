@@ -67,10 +67,14 @@ fun EmojiPanel(
     val coroutineScope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
 
-    val categories = remember(recentEmojis.toList()) {
+    // Capture a stable snapshot of recent emojis for the active panel session
+    // This prevents the grid from shifting/jumping under the user's fingers when tapping emojis
+    val sessionRecentEmojis = remember { recentEmojis.toList() }
+
+    val categories = remember(sessionRecentEmojis) {
         EmojiData.categories.toMutableList().apply {
-            // Populate "Recent" category
-            this[0] = this[0].copy(emojis = recentEmojis)
+            // Populate "Recent" category with stable session snapshot
+            this[0] = this[0].copy(emojis = sessionRecentEmojis)
         }
     }
 
@@ -142,7 +146,6 @@ fun EmojiPanel(
                     Row(
                         modifier = Modifier
                             .height(34.dp)
-                            .animateContentSize(animationSpec = tween(150))
                             .drawBehind {
                                 if (isSelected) {
                                     val shadowOffsetPx = 2.dp.toPx()

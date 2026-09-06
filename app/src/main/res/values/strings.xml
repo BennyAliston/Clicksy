@@ -15,8 +15,9 @@
     <string name="sound_on_keypress">Sound on Keypress</string>
     <string name="autocomplete">Autocomplete</string>
     <string name="about">About Clicksy</string>
-    <string name="version">Beta v0.1.0</string>
+    <string name="version">0.2.0-beta</string>
     <string name="author_credit">A solo open-source project by BennyAliston</string>
+    <string name="buy_me_a_coffee">☕ Buy Me a Coffee</string>
     <string name="clipboard_empty">Clipboard is empty</string>
     <string name="clipboard_title">Clipboard</string>
     <string name="voice_input">Voice Input</string>

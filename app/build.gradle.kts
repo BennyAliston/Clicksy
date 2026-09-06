@@ -13,8 +13,8 @@ android {
         applicationId = "com.clicksy.keyboard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "Beta v0.1.0"
+        versionCode = 2
+        versionName = "0.2.0-beta"
     }
 
     buildTypes {
@@ -59,4 +59,5 @@ dependencies {
     implementation(libs.room.ktx)
     kapt(libs.room.compiler)
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation("junit:junit:4.13.2")
 }

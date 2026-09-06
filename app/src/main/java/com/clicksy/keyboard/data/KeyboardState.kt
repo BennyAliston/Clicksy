@@ -7,6 +7,8 @@ enum class KeyboardMode {
     QWERTY,
     SYMBOLS_1,
     SYMBOLS_2,
+    NUMPAD,
+    CALCULATOR,
     EMOJI,
     CLIPBOARD
 }
@@ -18,6 +20,30 @@ enum class ShiftState {
     OFF,
     ONCE,
     CAPS_LOCK
+}
+
+/**
+ * Represents the detected input type requested by the application.
+ */
+enum class DetectedInputType {
+    TEXT,
+    EMAIL,
+    URI,
+    PASSWORD,
+    NUMBER,
+    NUMBER_PASSWORD,
+    PHONE,
+    DATETIME
+}
+
+/**
+ * Rules for auto-capitalization based on input type and flags.
+ */
+enum class AutoCapsType {
+    NONE,
+    CHARACTERS,
+    WORDS,
+    SENTENCES
 }
 
 /**
