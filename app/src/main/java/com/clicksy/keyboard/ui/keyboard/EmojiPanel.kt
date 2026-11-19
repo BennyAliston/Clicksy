@@ -60,7 +60,8 @@ fun EmojiPanel(
     onEmojiTap: (String) -> Unit,
     onBackToKeyboard: () -> Unit,
     onBackspace: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenEmojiSearch: () -> Unit = {}
 ) {
     val colors = ClicksyTheme.colors
     val dims = ClicksyTheme.dimensions
@@ -141,6 +142,34 @@ fun EmojiPanel(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Emoji Search button
+                Row(
+                    modifier = Modifier
+                        .height(34.dp)
+                        .drawBehind {
+                            val shadowOffsetPx = 2.dp.toPx()
+                            drawRoundRect(
+                                color = colors.shadow,
+                                topLeft = Offset(shadowOffsetPx, shadowOffsetPx),
+                                size = Size(size.width, size.height),
+                                cornerRadius = CornerRadius(8.dp.toPx())
+                            )
+                        }
+                        .background(colors.accentKeyBackground, RoundedCornerShape(8.dp))
+                        .border(dims.borderWidth, colors.border, RoundedCornerShape(8.dp))
+                        .clickable { onOpenEmojiSearch() }
+                        .padding(horizontal = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(text = "🔍", fontSize = 12.sp)
+                    Text(
+                        text = "Search emojis",
+                        style = ClicksyTypography.monoLabel.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                        color = colors.textOnAccent
+                    )
+                }
+
                 categories.forEachIndexed { index, category ->
                     val isSelected = index == currentCategoryIndex
                     Row(

@@ -53,17 +53,27 @@ fun KeyboardScreen(
     onSpace: () -> Unit,
     onRequestHaptic: () -> Unit,
     onVoiceInput: () -> Unit,
+    isVoiceListening: Boolean = false,
+    voiceRmsDb: Float = 0f,
+    voicePartialText: String = "",
+    voiceStatusMessage: String = "",
+    hasVoicePermission: Boolean = true,
+    onVoiceToggleListening: () -> Unit = {},
+    onRequestVoicePermission: () -> Unit = {},
     onSuggestionSelected: (String) -> Unit = {},
     getCurrentWord: () -> String = { "" },
     getPreviousWord: () -> String = { "" },
-    getCursorContext: (() -> Pair<String, String>)? = null,
+    getCursorContext: (() -> Triple<String, String, String>)? = null,
     onLaunchSettings: () -> Unit,
     modifier: Modifier = Modifier,
     autocompleteEnabled: Boolean = true,
+    autocorrectEnabled: Boolean = true,
     keyboardSize: KeyboardSize = KeyboardSize.MEDIUM,
     showNumberRow: Boolean = false,
     detectedInputType: DetectedInputType = DetectedInputType.TEXT,
-    suggestionsAllowed: Boolean = true
+    suggestionsAllowed: Boolean = true,
+    cursorUpdateTrigger: Long = 0L,
+    inputSessionId: Long = 0L
 ) {
     val colors = ClicksyTheme.colors
     val context = LocalContext.current
@@ -91,28 +101,71 @@ fun KeyboardScreen(
     // Keyboard state
     var currentWord by remember { mutableStateOf("") }
     var previousWord by remember { mutableStateOf("") }
+    var prevPrevWord by remember { mutableStateOf("") }
+    var typedWordBuffer by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf(listOf<String>()) }
+    var predictionSequence by remember { mutableLongStateOf(0L) }
     val clipboardSuggestion by clipboardViewModel.clipboardSuggestion.collectAsState()
 
+    val isPasswordField = detectedInputType == DetectedInputType.PASSWORD || detectedInputType == DetectedInputType.NUMBER_PASSWORD
+    val effectiveSuggestionsAllowed = suggestionsAllowed && !isPasswordField
+
+    // Immediate cleanup on field transitions or session updates
+    LaunchedEffect(inputSessionId) {
+        typedWordBuffer = ""
+        currentWord = ""
+        previousWord = ""
+        prevPrevWord = ""
+        suggestions = emptyList()
+    }
+
     // Update suggestions based on current word
-    fun updateSuggestions() {
+    fun updateSuggestions(isFromTyping: Boolean = false) {
         if (getCursorContext != null) {
-            val (curr, prev) = getCursorContext()
-            currentWord = curr
-            previousWord = prev
+            val (curr, prev, prevPrev) = getCursorContext()
+            if (curr.isNotEmpty()) {
+                typedWordBuffer = curr
+                currentWord = curr
+                previousWord = prev
+                prevPrevWord = prevPrev
+            } else if (!isFromTyping) {
+                typedWordBuffer = ""
+                currentWord = ""
+                previousWord = prev
+                prevPrevWord = prevPrev
+            } else {
+                if (typedWordBuffer.isNotEmpty()) {
+                    currentWord = typedWordBuffer
+                }
+            }
         } else {
-            currentWord = getCurrentWord()
-            previousWord = getPreviousWord()
+            val curr = getCurrentWord()
+            if (curr.isNotEmpty()) {
+                typedWordBuffer = curr
+                currentWord = curr
+                previousWord = getPreviousWord()
+                prevPrevWord = ""
+            } else if (!isFromTyping) {
+                typedWordBuffer = ""
+                currentWord = ""
+                previousWord = getPreviousWord()
+                prevPrevWord = ""
+            } else {
+                if (typedWordBuffer.isNotEmpty()) {
+                    currentWord = typedWordBuffer
+                }
+            }
         }
     }
 
-    LaunchedEffect(Unit) {
-        updateSuggestions()
+    LaunchedEffect(cursorUpdateTrigger) {
+        updateSuggestions(isFromTyping = false)
     }
 
-    LaunchedEffect(currentWord, previousWord, detectedInputType, suggestionsAllowed, autocompleteEnabled) {
-        suggestions = withContext(Dispatchers.Default) {
-            if (!suggestionsAllowed || !autocompleteEnabled) {
+    LaunchedEffect(currentWord, previousWord, prevPrevWord, detectedInputType, effectiveSuggestionsAllowed, autocompleteEnabled, inputSessionId) {
+        val sequenceId = ++predictionSequence
+        val results = withContext(Dispatchers.Default) {
+            if (!effectiveSuggestionsAllowed || !autocompleteEnabled) {
                 emptyList()
             } else if (detectedInputType == DetectedInputType.EMAIL) {
                 val emailDomains = listOf("@gmail.com", "@outlook.com", "@yahoo.com", "@icloud.com", "@hotmail.com", "@proton.me")
@@ -120,22 +173,47 @@ fun KeyboardScreen(
                     val query = currentWord.substringAfter("@").lowercase()
                     val matches = emailDomains.filter { it.removePrefix("@").startsWith(query) }
                     if (matches.isNotEmpty()) matches.take(3) else emailDomains.take(3)
-                } else if (currentWord.isNotEmpty()) {
-                    emailDomains.take(3)
+                } else if (currentWord.isNotBlank()) {
+                    val candidates = DictionaryProvider.getSuggestions(currentWord, prevWord = previousWord, prevPrevWord = prevPrevWord, limit = 5)
+                    val primary = candidates.firstOrNull() ?: currentWord
+                    listOf(primary, "$currentWord@gmail.com", candidates.getOrNull(1) ?: "@gmail.com")
                 } else {
                     listOf("@gmail.com", "@outlook.com", "@yahoo.com")
                 }
             } else if (detectedInputType == DetectedInputType.URI) {
                 val tlds = listOf(".com", ".org", ".net", ".io")
-                if (currentWord.isEmpty()) {
-                    listOf("https://", "www.", ".com")
-                } else {
+                val isTypingUrl = currentWord.contains(".") || currentWord.startsWith("http") || currentWord.startsWith("www.")
+                if (isTypingUrl) {
                     val query = currentWord.substringAfterLast(".", "").lowercase()
                     val matches = tlds.filter { it.removePrefix(".").startsWith(query) }
                     if (matches.isNotEmpty()) matches.take(3) else tlds.take(3)
+                } else if (currentWord.isNotBlank()) {
+                    val candidates = DictionaryProvider.getSuggestions(currentWord, prevWord = previousWord, prevPrevWord = prevPrevWord, limit = 5)
+                    val primary = candidates.firstOrNull() ?: currentWord
+                    val isCustomSpelling = currentWord.length >= 2 && !primary.equals(currentWord, ignoreCase = true) && !candidates.any { it.equals(currentWord, ignoreCase = true) }
+                    val left = if (isCustomSpelling) {
+                        "\"$currentWord\""
+                    } else {
+                        candidates.getOrNull(1) ?: ""
+                    }
+                    val right = if (left == "\"$currentWord\"") {
+                        candidates.getOrNull(1) ?: candidates.getOrNull(2) ?: ""
+                    } else {
+                        candidates.getOrNull(2) ?: ""
+                    }
+                    listOf(left, primary, right).filter { it.isNotEmpty() }
+                } else if (previousWord.isNotBlank()) {
+                    val nextWords = DictionaryProvider.getNextWordPredictions(previousWord, prevPrevWord = prevPrevWord, limit = 3)
+                    if (nextWords.size >= 2) {
+                        listOf(nextWords.getOrNull(1) ?: "", nextWords.getOrNull(0) ?: "", nextWords.getOrNull(2) ?: "").filter { it.isNotEmpty() }
+                    } else {
+                        nextWords
+                    }
+                } else {
+                    listOf("https://", "www.", ".com")
                 }
             } else if (currentWord.isNotBlank()) {
-                val candidates = DictionaryProvider.getSuggestions(currentWord, prevWord = previousWord, limit = 5)
+                val candidates = DictionaryProvider.getSuggestions(currentWord, prevWord = previousWord, prevPrevWord = prevPrevWord, limit = 5)
                 val primary = candidates.firstOrNull() ?: currentWord
                 val isCustomSpelling = currentWord.length >= 2 && !primary.equals(currentWord, ignoreCase = true) && !candidates.any { it.equals(currentWord, ignoreCase = true) }
                 val left = if (isCustomSpelling) {
@@ -151,52 +229,82 @@ fun KeyboardScreen(
 
                 listOf(left, primary, right).filter { it.isNotEmpty() }
             } else if (previousWord.isNotBlank()) {
-                val nextWords = DictionaryProvider.getNextWordPredictions(previousWord, limit = 3)
+                val nextWords = DictionaryProvider.getNextWordPredictions(previousWord, prevPrevWord = prevPrevWord, limit = 3)
                 if (nextWords.size >= 2) {
                     listOf(nextWords.getOrNull(1) ?: "", nextWords.getOrNull(0) ?: "", nextWords.getOrNull(2) ?: "").filter { it.isNotEmpty() }
                 } else {
                     nextWords
                 }
             } else {
-                val defaultStarters = DictionaryProvider.getNextWordPredictions("", limit = 3)
-                if (defaultStarters.size >= 2) {
-                    listOf(defaultStarters.getOrNull(1) ?: "", defaultStarters.getOrNull(0) ?: "", defaultStarters.getOrNull(2) ?: "").filter { it.isNotEmpty() }
-                } else {
-                    defaultStarters
-                }
+                emptyList()
             }
+        }
+        if (sequenceId == predictionSequence) {
+            suggestions = results
+            android.util.Log.d(
+                "ClicksyIME",
+                "[Prediction] wordLen=${currentWord.length}, candidatesCount=${results.size}, allowed=$effectiveSuggestionsAllowed"
+            )
         }
     }
 
     // Common character input handler
     fun handleCharacterInput(text: String) {
+        if (text.length == 1 && (text[0].isLetterOrDigit() || text[0] == '\'')) {
+            typedWordBuffer += text
+            currentWord = typedWordBuffer
+        } else if (text == " " || text == "\n" || text.any { !it.isLetterOrDigit() && it != '\'' }) {
+            if (typedWordBuffer.isNotEmpty()) {
+                previousWord = typedWordBuffer
+            }
+            typedWordBuffer = ""
+            currentWord = ""
+        }
         onTextInput(text)
         onRequestHaptic()
-        updateSuggestions()
+        updateSuggestions(isFromTyping = true)
     }
 
     fun handleBackspace() {
+        if (typedWordBuffer.isNotEmpty()) {
+            typedWordBuffer = typedWordBuffer.dropLast(1)
+            currentWord = typedWordBuffer
+        }
         onDeleteBackward()
         onRequestHaptic()
-        updateSuggestions()
+        updateSuggestions(isFromTyping = true)
     }
 
     fun handleSpace() {
+        if (typedWordBuffer.isNotEmpty()) {
+            previousWord = typedWordBuffer
+        }
+        typedWordBuffer = ""
+        currentWord = ""
         onSpace()
         onRequestHaptic()
-        updateSuggestions()
+        updateSuggestions(isFromTyping = false)
     }
 
     fun handleEnter() {
+        if (typedWordBuffer.isNotEmpty()) {
+            previousWord = typedWordBuffer
+        }
+        typedWordBuffer = ""
+        currentWord = ""
         onEnterAction()
         onRequestHaptic()
-        updateSuggestions()
+        updateSuggestions(isFromTyping = false)
     }
 
     fun handleSuggestionTap(suggestion: String) {
+        val cleaned = suggestion.removeSurrounding("\"")
+        previousWord = cleaned
+        typedWordBuffer = ""
+        currentWord = ""
         onSuggestionSelected(suggestion)
         onRequestHaptic()
-        updateSuggestions()
+        updateSuggestions(isFromTyping = false)
     }
 
     fun handleEmojiInput(emoji: String) {
@@ -242,6 +350,12 @@ fun KeyboardScreen(
             onRequestHaptic()
         }
     }
+    val onSwitchToEmojiSearchStable = remember(onModeChange, onRequestHaptic) {
+        {
+            onModeChange(KeyboardMode.EMOJI_SEARCH)
+            onRequestHaptic()
+        }
+    }
     val onSwitchToNumpadStable = remember(onModeChange, onRequestHaptic) {
         {
             onModeChange(KeyboardMode.NUMPAD)
@@ -278,7 +392,12 @@ fun KeyboardScreen(
                     onClipboardTap = onClipboardTapStable,
                     onVoiceTap = onVoiceInput,
                     onCalculatorTap = onSwitchToCalculatorStable,
-                    recentClipboardText = if (!suggestionsAllowed || detectedInputType == DetectedInputType.PASSWORD || detectedInputType == DetectedInputType.NUMBER_PASSWORD) null else clipboardSuggestion?.text,
+                    onSettingsTap = onLaunchSettings,
+                    onEmojiTap = onSwitchToEmojiStable,
+                    isTyping = autocompleteEnabled && effectiveSuggestionsAllowed && (currentWord.isNotBlank() || (previousWord.isNotBlank() && suggestions.isNotEmpty())),
+                    autocorrectEnabled = autocorrectEnabled,
+                    currentWord = currentWord,
+                    recentClipboardText = if (!effectiveSuggestionsAllowed || isPasswordField || currentWord.isNotEmpty() || previousWord.isNotEmpty()) null else clipboardSuggestion?.text,
                     onPasteClipboard = {
                         clipboardSuggestion?.let { suggestion ->
                             onTextInput(suggestion.text)
@@ -306,7 +425,8 @@ fun KeyboardScreen(
                             onEnter = onEnterStable,
                             onSwitchToSymbols = onSwitchToSymbolsStable,
                             onSwitchToEmoji = onSwitchToEmojiStable,
-                            onSpace = onSpaceStable
+                            onSpace = onSpaceStable,
+                            onOpenEmojiSearch = onSwitchToEmojiSearchStable
                         )
                     }
                     KeyboardMode.SYMBOLS_1, KeyboardMode.SYMBOLS_2 -> {
@@ -355,6 +475,18 @@ fun KeyboardScreen(
                     onEmojiTap = onEmojiTapStable,
                     onBackToKeyboard = onSwitchToQwertyStable,
                     onBackspace = onBackspaceStable,
+                    onOpenEmojiSearch = onSwitchToEmojiSearchStable,
+                    modifier = Modifier.height(panelHeight)
+                )
+            }
+
+            KeyboardMode.EMOJI_SEARCH -> {
+                EmojiSearchPanel(
+                    recentEmojis = recentEmojis,
+                    onEmojiTap = onEmojiTapStable,
+                    onBackToKeyboard = onSwitchToQwertyStable,
+                    onBackToEmojiPanel = onSwitchToEmojiStable,
+                    onRequestHaptic = onRequestHaptic,
                     modifier = Modifier.height(panelHeight)
                 )
             }
@@ -364,14 +496,34 @@ fun KeyboardScreen(
                     viewModel = clipboardViewModel,
                     onItemTap = { text ->
                         onTextInput(text)
-                        onModeChange(KeyboardMode.QWERTY)
+                        if (clipboardViewModel.autoCloseOnPaste.value) {
+                            onModeChange(KeyboardMode.QWERTY)
+                        }
                         onRequestHaptic()
                     },
                     onBackToKeyboard = {
                         onModeChange(KeyboardMode.QWERTY)
                         onRequestHaptic()
                     },
-                    onLaunchSettings = onLaunchSettings,
+                    onRequestHaptic = onRequestHaptic,
+                    modifier = Modifier.height(panelHeight)
+                )
+            }
+
+            KeyboardMode.VOICE_INPUT -> {
+                VoiceInputPanel(
+                    isListening = isVoiceListening,
+                    rmsDb = voiceRmsDb,
+                    partialText = voicePartialText,
+                    statusMessage = voiceStatusMessage,
+                    hasPermission = hasVoicePermission,
+                    onToggleListening = onVoiceToggleListening,
+                    onRequestPermission = onRequestVoicePermission,
+                    onBackToKeyboard = onSwitchToQwertyStable,
+                    onDelete = onBackspaceStable,
+                    onSpace = onSpaceStable,
+                    onDone = onSwitchToQwertyStable,
+                    onRequestHaptic = onRequestHaptic,
                     modifier = Modifier.height(panelHeight)
                 )
             }

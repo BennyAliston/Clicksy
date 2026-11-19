@@ -84,7 +84,10 @@ fun NeuKey(
         )
     }
 
-    val isRounded = dims.keyCornerRadius > 10.dp
+    val isRounded = dims.keyCornerRadius > 10.dp ||
+            dims.keyShapeStyle == com.clicksy.keyboard.data.KeyShapeStyle.PILL ||
+            dims.keyShapeStyle == com.clicksy.keyboard.data.KeyShapeStyle.SOFT ||
+            dims.keyShapeStyle == com.clicksy.keyboard.data.KeyShapeStyle.CUT_CORNER
     val subLabelEndPadding = remember(dims.shadowOffsetX, dims.borderWidth, isRounded) {
         if (isRounded) {
             dims.shadowOffsetX + dims.borderWidth + 4.dp
@@ -131,7 +134,10 @@ fun NeuKey(
     val shadowOffsetYPx = with(density) { dims.shadowOffsetY.toPx() }
     val borderWidthPx = with(density) { dims.borderWidth.toPx() }
     val cornerRadiusPx = with(density) { dims.keyCornerRadius.toPx() }
-    val pressedTranslatePx = with(density) { (dims.shadowOffsetX - 1.dp).coerceAtLeast(0.dp).toPx() }
+    val pressedTranslatePx = with(density) {
+        if (dims.shadowOffsetX > 0.dp) (dims.shadowOffsetX - 1.dp).coerceAtLeast(0.dp).toPx() else 0f
+    }
+    val cutCornerPath = remember { androidx.compose.ui.graphics.Path() }
 
     Box(
         modifier = modifier
@@ -222,48 +228,120 @@ fun NeuKey(
                 }
             }
             .drawBehind {
-                val cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
-                val keyCapWidth = size.width - shadowOffsetPx
-                val keyCapHeight = size.height - shadowOffsetYPx
+                val keyCapWidth = if (shadowOffsetPx > 0f) size.width - shadowOffsetPx else size.width
+                val keyCapHeight = if (shadowOffsetYPx > 0f) size.height - shadowOffsetYPx else size.height
 
                 if (keyCapWidth <= 0f || keyCapHeight <= 0f) return@drawBehind
 
                 val transX = if (isPressed) pressedTranslatePx else 0f
                 val transY = if (isPressed) pressedTranslatePx else 0f
 
-                // 1. Draw hard Neubrutalism drop shadow
-                drawRoundRect(
-                    color = shadowColor,
-                    topLeft = Offset(shadowOffsetPx, shadowOffsetYPx),
-                    size = Size(keyCapWidth, keyCapHeight),
-                    cornerRadius = cornerRadius
-                )
+                val shapeStyle = dims.keyShapeStyle
+                val effectiveCornerRadius = when (shapeStyle) {
+                    com.clicksy.keyboard.data.KeyShapeStyle.SHARP -> CornerRadius.Zero
+                    com.clicksy.keyboard.data.KeyShapeStyle.SOFT -> CornerRadius(with(density) { 14.dp.toPx() }, with(density) { 14.dp.toPx() })
+                    com.clicksy.keyboard.data.KeyShapeStyle.PILL -> CornerRadius(keyCapHeight / 2f, keyCapHeight / 2f)
+                    com.clicksy.keyboard.data.KeyShapeStyle.ROUNDED -> CornerRadius(cornerRadiusPx, cornerRadiusPx)
+                    com.clicksy.keyboard.data.KeyShapeStyle.CUT_CORNER -> CornerRadius.Zero
+                }
 
-                // 2. Draw keycap fill
-                drawRoundRect(
-                    color = backgroundColor,
-                    topLeft = Offset(transX, transY),
-                    size = Size(keyCapWidth, keyCapHeight),
-                    cornerRadius = cornerRadius
-                )
+                if (shapeStyle == com.clicksy.keyboard.data.KeyShapeStyle.CUT_CORNER) {
+                    val cutSize = (if (cornerRadiusPx > 0f) cornerRadiusPx else with(density) { 8.dp.toPx() })
+                        .coerceAtMost(minOf(keyCapWidth, keyCapHeight) / 3f)
 
-                // 3. Draw solid black border
-                drawRoundRect(
-                    color = borderColor,
-                    topLeft = Offset(transX, transY),
-                    size = Size(keyCapWidth, keyCapHeight),
-                    cornerRadius = cornerRadius,
-                    style = Stroke(width = borderWidthPx)
-                )
+                    // 1. Draw hard Neubrutalism drop shadow
+                    if (shadowOffsetPx > 0f || shadowOffsetYPx > 0f) {
+                        cutCornerPath.reset()
+                        cutCornerPath.moveTo(shadowOffsetPx + cutSize, shadowOffsetYPx)
+                        cutCornerPath.lineTo(shadowOffsetPx + keyCapWidth - cutSize, shadowOffsetYPx)
+                        cutCornerPath.lineTo(shadowOffsetPx + keyCapWidth, shadowOffsetYPx + cutSize)
+                        cutCornerPath.lineTo(shadowOffsetPx + keyCapWidth, shadowOffsetYPx + keyCapHeight - cutSize)
+                        cutCornerPath.lineTo(shadowOffsetPx + keyCapWidth - cutSize, shadowOffsetYPx + keyCapHeight)
+                        cutCornerPath.lineTo(shadowOffsetPx + cutSize, shadowOffsetYPx + keyCapHeight)
+                        cutCornerPath.lineTo(shadowOffsetPx, shadowOffsetYPx + keyCapHeight - cutSize)
+                        cutCornerPath.lineTo(shadowOffsetPx, shadowOffsetYPx + cutSize)
+                        cutCornerPath.close()
+                        drawPath(cutCornerPath, color = shadowColor)
+                    }
+
+                    // 2. Draw keycap fill
+                    cutCornerPath.reset()
+                    cutCornerPath.moveTo(transX + cutSize, transY)
+                    cutCornerPath.lineTo(transX + keyCapWidth - cutSize, transY)
+                    cutCornerPath.lineTo(transX + keyCapWidth, transY + cutSize)
+                    cutCornerPath.lineTo(transX + keyCapWidth, transY + keyCapHeight - cutSize)
+                    cutCornerPath.lineTo(transX + keyCapWidth - cutSize, transY + keyCapHeight)
+                    cutCornerPath.lineTo(transX + cutSize, transY + keyCapHeight)
+                    cutCornerPath.lineTo(transX, transY + keyCapHeight - cutSize)
+                    cutCornerPath.lineTo(transX, transY + cutSize)
+                    cutCornerPath.close()
+                    drawPath(cutCornerPath, color = backgroundColor)
+
+                    // 3. Draw solid border
+                    if (borderWidthPx > 0f) {
+                        drawPath(cutCornerPath, color = borderColor, style = Stroke(width = borderWidthPx))
+                    }
+
+                    // Pressed overlay when flat (no shadow)
+                    if (shadowOffsetPx == 0f && isPressed) {
+                        drawPath(cutCornerPath, color = colors.pressedOverlay)
+                    }
+                } else {
+                    // 1. Draw hard Neubrutalism drop shadow
+                    if (shadowOffsetPx > 0f || shadowOffsetYPx > 0f) {
+                        drawRoundRect(
+                            color = shadowColor,
+                            topLeft = Offset(shadowOffsetPx, shadowOffsetYPx),
+                            size = Size(keyCapWidth, keyCapHeight),
+                            cornerRadius = effectiveCornerRadius
+                        )
+                    }
+
+                    // 2. Draw keycap fill
+                    drawRoundRect(
+                        color = backgroundColor,
+                        topLeft = Offset(transX, transY),
+                        size = Size(keyCapWidth, keyCapHeight),
+                        cornerRadius = effectiveCornerRadius
+                    )
+
+                    // 3. Draw solid border
+                    if (borderWidthPx > 0f) {
+                        drawRoundRect(
+                            color = borderColor,
+                            topLeft = Offset(transX, transY),
+                            size = Size(keyCapWidth, keyCapHeight),
+                            cornerRadius = effectiveCornerRadius,
+                            style = Stroke(width = borderWidthPx)
+                        )
+                    }
+
+                    // Pressed overlay when flat (no shadow)
+                    if (shadowOffsetPx == 0f && isPressed) {
+                        drawRoundRect(
+                            color = colors.pressedOverlay,
+                            topLeft = Offset(transX, transY),
+                            size = Size(keyCapWidth, keyCapHeight),
+                            cornerRadius = effectiveCornerRadius
+                        )
+                    }
+                }
             }
             .graphicsLayer {
-                val trans = if (isPressed) pressedTranslatePx else 0f
-                translationX = trans - (shadowOffsetPx / 2f)
-                translationY = trans - (shadowOffsetYPx / 2f)
+                if (shadowOffsetPx > 0f || shadowOffsetYPx > 0f) {
+                    val trans = if (isPressed) pressedTranslatePx else 0f
+                    translationX = trans - (shadowOffsetPx / 2f)
+                    translationY = trans - (shadowOffsetYPx / 2f)
+                } else {
+                    if (isPressed) {
+                        scaleX = 0.96f
+                        scaleY = 0.96f
+                    }
+                }
             },
         contentAlignment = Alignment.Center
     ) {
-        if (subLabel != null) {
+        if (subLabel != null && dims.showSecondarySymbols) {
             Text(
                 text = subLabel,
                 style = subLabelStyle,

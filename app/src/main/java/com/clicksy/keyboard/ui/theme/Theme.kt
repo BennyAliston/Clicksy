@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import com.clicksy.keyboard.data.NeuTheme
 import kotlin.math.exp
 
+import com.clicksy.keyboard.data.KeyShapeStyle
+
 /**
  * Neubrutalism-specific dimension tokens.
  */
@@ -30,7 +32,9 @@ data class ClicksyDimensions(
     val keyHeight: Dp = 50.dp,
     val keySpacing: Dp = 4.dp,
     val suggestionBarHeight: Dp = 40.dp,
-    val keyboardPadding: Dp = 4.dp
+    val keyboardPadding: Dp = 4.dp,
+    val keyShapeStyle: KeyShapeStyle = KeyShapeStyle.ROUNDED,
+    val showSecondarySymbols: Boolean = true
 )
 
 val LocalClicksyColors = staticCompositionLocalOf { SunshineColors }
@@ -185,12 +189,21 @@ fun getAdaptiveColorScheme(packageName: String, isDark: Boolean): ClicksyColorSc
 @Composable
 fun NeuTheme.toColorScheme(
     activePackageName: String = "com.clicksy.keyboard",
-    isDark: Boolean = isSystemInDarkTheme()
+    isDark: Boolean = isSystemInDarkTheme(),
+    customColors: ClicksyColorScheme? = null
 ): ClicksyColorScheme = when (this) {
     NeuTheme.SUNSHINE -> SunshineColors
     NeuTheme.BUBBLEGUM -> BubblegumColors
     NeuTheme.MINTY -> MintyColors
+    NeuTheme.MIDNIGHT -> MidnightColors
+    NeuTheme.CYBERPUNK -> CyberpunkColors
+    NeuTheme.LAVENDER -> LavenderColors
+    NeuTheme.FOREST -> ForestColors
+    NeuTheme.RETRO -> RetroTerminalColors
+    NeuTheme.SUNSET -> SunsetColors
+    NeuTheme.MONOCHROME -> MonochromeColors
     NeuTheme.ADAPTIVE -> getAdaptiveColorScheme(activePackageName, isDark)
+    NeuTheme.CUSTOM -> customColors ?: SunshineColors
 }
 
 /**

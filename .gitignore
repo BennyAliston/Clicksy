@@ -5,6 +5,9 @@ gen/
 out/
 app/build/
 
+# Kotlin compiler daemon
+.kotlin/
+
 # IDE & Editor files
 .idea/
 .vs/
@@ -13,14 +16,40 @@ app/build/
 local.properties
 .navigation/
 
+# Android build outputs & profiler
+*.apk
+*.aab
+*.ap_
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore & Signing
+*.jks
+*.keystore
+*.key
+release-signing.properties
+secrets.properties
+
 # Log files and reports
 *.log
 outputs/
 
+# Python tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+env/
+venv/
+
 # OS-specific files
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
 
 # Local media preview files
 Preview/
-

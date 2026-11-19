@@ -44,7 +44,8 @@ fun QwertyLayout(
     onSpace: () -> Unit,
     modifier: Modifier = Modifier,
     showNumberRow: Boolean = false,
-    detectedInputType: DetectedInputType = DetectedInputType.TEXT
+    detectedInputType: DetectedInputType = DetectedInputType.TEXT,
+    onOpenEmojiSearch: (() -> Unit)? = null
 ) {
     val dims = ClicksyTheme.dimensions
     val spacing = dims.keySpacing
@@ -166,7 +167,8 @@ fun QwertyLayout(
                 label = "",
                 modifier = Modifier.weight(1.0f),
                 icon = { CustomEmojiIcon(size = 22.dp) },
-                onTap = onSwitchToEmoji
+                onTap = onSwitchToEmoji,
+                onLongPress = onOpenEmojiSearch
             )
 
             when (detectedInputType) {

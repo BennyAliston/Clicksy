@@ -56,4 +56,10 @@ interface ClipboardDao {
 
     @Query("DELETE FROM clipboard_history WHERE id IN (SELECT id FROM clipboard_history WHERE pinned = 0 ORDER BY copied_timestamp ASC LIMIT :limit)")
     suspend fun deleteOldestUnpinned(limit: Int)
+
+    @Query("DELETE FROM clipboard_history WHERE text = :text AND id != :keepId")
+    suspend fun deleteDuplicatesForText(text: String, keepId: Long)
+
+    @Query("DELETE FROM clipboard_history WHERE id NOT IN (SELECT MAX(id) FROM clipboard_history GROUP BY text)")
+    suspend fun deleteDuplicates()
 }

@@ -10,7 +10,9 @@ enum class KeyboardMode {
     NUMPAD,
     CALCULATOR,
     EMOJI,
-    CLIPBOARD
+    EMOJI_SEARCH,
+    CLIPBOARD,
+    VOICE_INPUT
 }
 
 /**
@@ -47,13 +49,32 @@ enum class AutoCapsType {
 }
 
 /**
+ * Represents the available neubrutalism key shape styles.
+ */
+enum class KeyShapeStyle {
+    ROUNDED,
+    SHARP,
+    SOFT,
+    PILL,
+    CUT_CORNER
+}
+
+/**
  * Represents the available neubrutalism themes.
  */
 enum class NeuTheme {
     SUNSHINE,
     BUBBLEGUM,
     MINTY,
-    ADAPTIVE
+    MIDNIGHT,
+    CYBERPUNK,
+    LAVENDER,
+    FOREST,
+    RETRO,
+    SUNSET,
+    MONOCHROME,
+    ADAPTIVE,
+    CUSTOM
 }
 
 /**

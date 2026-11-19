@@ -1,0 +1,178 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ClicksyDictionary",
+  "description": "Schema for Clicksy Keyboard English + Hinglish Unified Dictionary and Language Model",
+  "type": "object",
+  "required": [
+    "version",
+    "generatedAt",
+    "metadata",
+    "shortcuts",
+    "words"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version of the dictionary schema and release"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of dictionary generation"
+    },
+    "description": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "totalWords",
+        "totalShortcuts",
+        "sources"
+      ],
+      "properties": {
+        "totalWords": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "englishWordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hinglishWordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalShortcuts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBigrams": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalTrigrams": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url",
+              "license",
+              "provenance"
+            ],
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string" },
+              "license": { "type": "string" },
+              "provenance": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "shortcuts": {
+      "type": "object",
+      "description": "Map of abbreviation/shortcut string to list of possible context-dependent expansions",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1
+      }
+    },
+    "words": {
+      "type": "array",
+      "description": "List of normalized vocabulary entries",
+      "items": {
+        "type": "object",
+        "required": [
+          "word",
+          "language",
+          "frequency",
+          "source",
+          "license"
+        ],
+        "properties": {
+          "word": {
+            "type": "string",
+            "description": "Canonical spelling in lowercase Latin characters"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "English",
+              "Hinglish",
+              "Bilingual"
+            ]
+          },
+          "variants": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Accepted alternative spellings (e.g. accha -> achha, acha)"
+          },
+          "frequency": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Corpus frequency count or calibrated ranking score"
+          },
+          "shortForms": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Common informal abbreviations mapping to this canonical word"
+          },
+          "corrections": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "High-confidence autocorrect typo candidates that should resolve to this word"
+          },
+          "source": {
+            "type": "string",
+            "description": "Provenance dataset identifier"
+          },
+          "license": {
+            "type": "string",
+            "description": "Applicable data redistribution license"
+          }
+        }
+      }
+    },
+    "bigrams": {
+      "type": "object",
+      "description": "Language model bigrams: prevWord -> { nextWord: frequency }",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer"
+        }
+      }
+    },
+    "trigrams": {
+      "type": "object",
+      "description": "Language model trigrams: 'prevPrev prev' -> { nextWord: frequency }",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer"
+        }
+      }
+    },
+    "properCasing": {
+      "type": "object",
+      "description": "Canonical proper casing map for proper nouns, acronyms, and cultural entities",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "emojis": {
+      "type": "object",
+      "description": "Contextual inline emoji keywords",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Service that handles listening for clipboard changes, filtering out sensitive
- * content (passwords, OTPs, etc.), checking user settings, and saving copies to the database.
+ * content (passwords, OTPs, API keys, etc.), checking user settings, and saving copies to the database.
  */
 class ClipboardManagerService(
     private val context: Context,
@@ -25,8 +25,15 @@ class ClipboardManagerService(
 
     private var activeEditorInfo: EditorInfo? = null
 
+    @Volatile
+    private var lastProcessedText: String? = null
+    @Volatile
+    private var lastProcessedTime: Long = 0L
+
     companion object {
         const val KEY_CLIPBOARD_HISTORY_ENABLED = "clipboard_history_enabled"
+        const val KEY_CLIPBOARD_INCOGNITO = "clipboard_incognito_mode"
+        const val KEY_CLIPBOARD_AUTO_CLOSE = "clipboard_auto_close"
     }
 
     private val clipChangedListener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
@@ -57,8 +64,16 @@ class ClipboardManagerService(
         return prefs.getBoolean(KEY_CLIPBOARD_HISTORY_ENABLED, true)
     }
 
+    fun isIncognitoMode(): Boolean {
+        return prefs.getBoolean(KEY_CLIPBOARD_INCOGNITO, false)
+    }
+
+    fun setIncognitoMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CLIPBOARD_INCOGNITO, enabled).apply()
+    }
+
     fun processCurrentClipboard() {
-        if (!isHistoryEnabled()) return
+        if (!isHistoryEnabled() || isIncognitoMode()) return
 
         // 1. If currently in a password field, do not record copies
         val activeInputType = activeEditorInfo?.inputType ?: 0
@@ -74,6 +89,14 @@ class ClipboardManagerService(
                 
                 if (text.isBlank()) return
 
+                // Debounce rapid duplicate clip notifications for identical text within 1200ms
+                val now = System.currentTimeMillis()
+                if (text == lastProcessedText && (now - lastProcessedTime) < 1200L) {
+                    return
+                }
+                lastProcessedText = text
+                lastProcessedTime = now
+
                 // 2. Check Android standard sensitive content
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
                     val description = clipData.description
@@ -84,8 +107,11 @@ class ClipboardManagerService(
                     }
                 }
 
-                // 3. Custom heuristics for OTPs / verification codes
-                if (isOtpOrVerificationCode(text)) {
+                // 3. Custom heuristics for OTPs / verification codes, credit cards, and API secrets/keys
+                if (isOtpOrVerificationCode(text) ||
+                    ClipboardUtils.isPotentialCreditCard(text) ||
+                    ClipboardUtils.isPotentialSecretOrApiKey(text)
+                ) {
                     return
                 }
 

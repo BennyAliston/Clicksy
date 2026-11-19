@@ -17,8 +17,8 @@ class InputTypeDetectorTest {
         val configNull = InputTypeDetector.detect(null)
         assertEquals(DetectedInputType.TEXT, configNull.detectedType)
         assertEquals(KeyboardMode.QWERTY, configNull.initialMode)
-        assertEquals(AutoCapsType.NONE, configNull.autoCapsType)
-        assertFalse(configNull.suggestionsAllowed)
+        assertEquals(AutoCapsType.SENTENCES, configNull.autoCapsType)
+        assertTrue(configNull.suggestionsAllowed)
 
         val infoTypeNull = EditorInfo().apply {
             inputType = InputType.TYPE_NULL
@@ -26,8 +26,8 @@ class InputTypeDetectorTest {
         val configTypeNull = InputTypeDetector.detect(infoTypeNull)
         assertEquals(DetectedInputType.TEXT, configTypeNull.detectedType)
         assertEquals(KeyboardMode.QWERTY, configTypeNull.initialMode)
-        assertEquals(AutoCapsType.NONE, configTypeNull.autoCapsType)
-        assertFalse(configTypeNull.suggestionsAllowed)
+        assertEquals(AutoCapsType.SENTENCES, configTypeNull.autoCapsType)
+        assertTrue(configTypeNull.suggestionsAllowed)
     }
 
     @Test
@@ -202,7 +202,27 @@ class InputTypeDetectorTest {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         }
         val config = InputTypeDetector.detect(info)
-        assertFalse(config.suggestionsAllowed)
+        assertTrue(config.suggestionsAllowed)
+    }
+
+    @Test
+    fun testHintFallbackDoesNotFalsePositiveOnSubstrings() {
+        // "shopping", "opinion", "shipping" should not trigger PIN
+        val infoShopping = EditorInfo().apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hintText = "Shopping cart search"
+        }
+        val configShopping = InputTypeDetector.detect(infoShopping)
+        assertEquals(DetectedInputType.TEXT, configShopping.detectedType)
+        assertTrue(configShopping.suggestionsAllowed)
+
+        val infoOpinion = EditorInfo().apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hintText = "Give your opinion"
+        }
+        val configOpinion = InputTypeDetector.detect(infoOpinion)
+        assertEquals(DetectedInputType.TEXT, configOpinion.detectedType)
+        assertTrue(configOpinion.suggestionsAllowed)
     }
 
     @Test
@@ -289,5 +309,197 @@ class InputTypeDetectorTest {
         val configUrl = InputTypeDetector.detect(infoUrlField)
         assertEquals(DetectedInputType.URI, configUrl.detectedType)
         assertEquals(AutoCapsType.NONE, configUrl.autoCapsType)
+
+        // Search bar with phone/email in hint should NOT be hijacked to NUMPAD or EMAIL
+        val infoSearchHint = EditorInfo().apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            hintText = "Search by name, phone or email"
+        }
+        val configSearch = InputTypeDetector.detect(infoSearchHint)
+        assertEquals(DetectedInputType.TEXT, configSearch.detectedType)
+        assertEquals(KeyboardMode.QWERTY, configSearch.initialMode)
+        assertTrue(configSearch.suggestionsAllowed)
+    }
+
+    @Test
+    fun testInstagramDirectChatDetection() {
+        // Standard Instagram Direct message composer
+        val infoInstagramChat = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            hintText = "Message..."
+            fieldName = "row_thread_composer_edittext"
+            imeOptions = EditorInfo.IME_ACTION_SEND
+        }
+        val configInstagram = InputTypeDetector.detect(infoInstagramChat)
+        assertEquals(DetectedInputType.TEXT, configInstagram.detectedType)
+        assertEquals(KeyboardMode.QWERTY, configInstagram.initialMode)
+        assertTrue(configInstagram.suggestionsAllowed)
+        assertFalse(InputTypeDetector.isPasswordField(infoInstagramChat))
+        assertEquals("Send", configInstagram.enterLabel)
+
+        // Instagram Direct Chat with TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or NO_SUGGESTIONS
+        val infoInstagramVisiblePassword = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            hintText = "Send a message..."
+            fieldName = "direct_thread_edit_text"
+            imeOptions = EditorInfo.IME_ACTION_SEND
+        }
+        val configVisiblePassword = InputTypeDetector.detect(infoInstagramVisiblePassword)
+        assertEquals(DetectedInputType.TEXT, configVisiblePassword.detectedType)
+        assertEquals(KeyboardMode.QWERTY, configVisiblePassword.initialMode)
+        assertTrue(configVisiblePassword.suggestionsAllowed)
+        assertFalse(InputTypeDetector.isPasswordField(infoInstagramVisiblePassword))
+
+        // Instagram Login Password Screen should still be recognized as password
+        val infoInstagramLogin = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            hintText = "Password"
+            fieldName = "password"
+        }
+        val configInstagramLogin = InputTypeDetector.detect(infoInstagramLogin)
+        assertEquals(DetectedInputType.PASSWORD, configInstagramLogin.detectedType)
+        assertFalse(configInstagramLogin.suggestionsAllowed)
+        assertTrue(InputTypeDetector.isPasswordField(infoInstagramLogin))
+
+        // WhatsApp and Messenger chat inputs
+        val infoWhatsApp = EditorInfo().apply {
+            packageName = "com.whatsapp"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            hintText = "Type a message"
+            imeOptions = EditorInfo.IME_ACTION_SEND
+        }
+        val configWhatsApp = InputTypeDetector.detect(infoWhatsApp)
+        assertEquals(DetectedInputType.TEXT, configWhatsApp.detectedType)
+        assertTrue(configWhatsApp.suggestionsAllowed)
+        assertTrue(configWhatsApp.autocorrectAllowed)
+        assertFalse(InputTypeDetector.isPasswordField(infoWhatsApp))
+    }
+
+    @Test
+    fun testInstagramPostAndReelComments() {
+        val infoComment = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            hintText = "Add a comment..."
+            fieldName = "layout_comment_thread_edittext"
+        }
+        val config = InputTypeDetector.detect(infoComment)
+        assertEquals(DetectedInputType.TEXT, config.detectedType)
+        assertTrue(config.suggestionsAllowed)
+        assertTrue(config.autocorrectAllowed)
+        assertEquals(AutoCapsType.SENTENCES, config.autoCapsType)
+    }
+
+    @Test
+    fun testInstagramStoryRepliesAndCaptions() {
+        // Caption
+        val infoCaption = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            hintText = "Write a caption..."
+            fieldName = "caption_text_view"
+        }
+        val configCaption = InputTypeDetector.detect(infoCaption)
+        assertTrue(configCaption.suggestionsAllowed)
+        assertTrue(configCaption.autocorrectAllowed)
+        assertEquals(AutoCapsType.SENTENCES, configCaption.autoCapsType)
+
+        // Story reply
+        val infoStoryReply = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            hintText = "Send message"
+            fieldName = "reel_viewer_composer"
+            imeOptions = EditorInfo.IME_ACTION_SEND
+        }
+        val configStoryReply = InputTypeDetector.detect(infoStoryReply)
+        assertTrue(configStoryReply.suggestionsAllowed)
+        assertTrue(configStoryReply.autocorrectAllowed)
+        assertEquals("Send", configStoryReply.enterLabel)
+    }
+
+    @Test
+    fun testInstagramSearchField() {
+        val infoSearch = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT
+            hintText = "Search"
+            fieldName = "action_bar_search_edit_text"
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+        }
+        val config = InputTypeDetector.detect(infoSearch)
+        assertTrue(config.suggestionsAllowed)
+        assertFalse(config.autocorrectAllowed)
+        assertEquals("🔍", config.enterLabel)
+        assertEquals(EditorInfo.IME_ACTION_SEARCH, config.actionId)
+    }
+
+    @Test
+    fun testInstagramProfileFields() {
+        // Profile Name (e.g. John Doe)
+        val infoName = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PERSON_NAME
+            hintText = "Name"
+            fieldName = "full_name"
+        }
+        val configName = InputTypeDetector.detect(infoName)
+        assertTrue(configName.suggestionsAllowed)
+        assertFalse(configName.autocorrectAllowed)
+        assertEquals(AutoCapsType.WORDS, configName.autoCapsType)
+
+        // Profile Username Handle (e.g. @john_doe_99)
+        // Genuine restriction: technical handle must not be auto-corrected or suggested
+        val infoUsername = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            hintText = "Username"
+            fieldName = "username_field"
+        }
+        val configUsername = InputTypeDetector.detect(infoUsername)
+        assertFalse(configUsername.suggestionsAllowed)
+        assertFalse(configUsername.autocorrectAllowed)
+        assertEquals(AutoCapsType.NONE, configUsername.autoCapsType)
+
+        // Profile Bio (natural language multiline)
+        val infoBio = EditorInfo().apply {
+            packageName = "com.instagram.android"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            hintText = "Bio"
+            fieldName = "biography"
+        }
+        val configBio = InputTypeDetector.detect(infoBio)
+        assertTrue(configBio.suggestionsAllowed)
+        assertTrue(configBio.autocorrectAllowed)
+        assertEquals(AutoCapsType.SENTENCES, configBio.autoCapsType)
+    }
+
+    @Test
+    fun testNonInstagramOrdinaryFieldsPreserved() {
+        // Standard note app body
+        val infoNote = EditorInfo().apply {
+            packageName = "com.google.android.keep"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            hintText = "Note"
+        }
+        val configNote = InputTypeDetector.detect(infoNote)
+        assertEquals(DetectedInputType.TEXT, configNote.detectedType)
+        assertTrue(configNote.suggestionsAllowed)
+        assertTrue(configNote.autocorrectAllowed)
+        assertEquals(AutoCapsType.SENTENCES, configNote.autoCapsType)
+
+        // Web search in Chrome
+        val infoChrome = EditorInfo().apply {
+            packageName = "com.android.chrome"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+        }
+        val configChrome = InputTypeDetector.detect(infoChrome)
+        assertEquals(DetectedInputType.URI, configChrome.detectedType)
+        assertTrue(configChrome.suggestionsAllowed)
+        assertFalse(configChrome.autocorrectAllowed)
     }
 }

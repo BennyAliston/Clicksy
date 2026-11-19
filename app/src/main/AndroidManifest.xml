@@ -36,6 +36,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Voice Typing Permission Activity -->
+        <activity
+            android:name=".util.VoicePermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Clicksy.Translucent" />
+
     </application>
 
 </manifest>

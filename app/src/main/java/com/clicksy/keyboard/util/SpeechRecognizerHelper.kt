@@ -1,11 +1,15 @@
 package com.clicksy.keyboard.util
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import androidx.core.content.ContextCompat
+import java.util.Locale
 
 /**
  * Helper for voice input using Android's SpeechRecognizer API.
@@ -21,13 +25,39 @@ class SpeechRecognizerHelper(private val context: Context) {
         fun onError(errorMessage: String)
         fun onListeningStarted()
         fun onListeningStopped()
+        fun onRmsChanged(rmsdB: Float) {}
+    }
+
+    /**
+     * Check if RECORD_AUDIO permission has been granted.
+     */
+    fun hasPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Check if voice recognition is currently listening.
+     */
+    fun isListening(): Boolean = isListening
+
+    /**
+     * Check if speech recognition is supported on this device.
+     */
+    fun isRecognitionAvailable(): Boolean {
+        return SpeechRecognizer.isRecognitionAvailable(context)
     }
 
     /**
      * Start voice recognition.
      * Results are delivered through [callback].
      */
-    fun startListening(callback: VoiceInputCallback) {
+    fun startListening(
+        callback: VoiceInputCallback,
+        localeTag: String = Locale.getDefault().toLanguageTag()
+    ) {
         if (isListening) {
             stopListening()
         }
@@ -45,7 +75,11 @@ class SpeechRecognizerHelper(private val context: Context) {
                 }
 
                 override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
+
+                override fun onRmsChanged(rmsdB: Float) {
+                    callback.onRmsChanged(rmsdB)
+                }
+
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
                 override fun onEndOfSpeech() {
@@ -95,7 +129,7 @@ class SpeechRecognizerHelper(private val context: Context) {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
@@ -108,11 +142,19 @@ class SpeechRecognizerHelper(private val context: Context) {
     }
 
     /**
-     * Stop active voice recognition.
+     * Stop active voice recognition gracefully (waiting for final results).
      */
     fun stopListening() {
         isListening = false
         speechRecognizer?.stopListening()
+    }
+
+    /**
+     * Cancel active voice recognition immediately without waiting for results.
+     */
+    fun cancel() {
+        isListening = false
+        speechRecognizer?.cancel()
     }
 
     /**
